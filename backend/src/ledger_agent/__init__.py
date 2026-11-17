@@ -1,3 +1,3 @@
-"""Agentic RAG over SEC filings with fully traceable numbers."""
+"""RAG agentique sur les dépôts SEC, avec des chiffres entièrement traçables."""
 
 __version__ = "0.1.0"

@@ -1,4 +1,4 @@
-"""Application settings loaded from environment variables and the root .env file."""
+"""Paramètres de l'application, lus depuis les variables d'environnement et le .env racine."""
 
 from functools import lru_cache
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# src/ledger_agent/config.py -> parents[3] is the repository root
+# src/ledger_agent/config.py -> parents[3] est la racine du dépôt
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -20,23 +20,23 @@ class Settings(BaseSettings):
     # SEC EDGAR
     sec_user_agent: str = ""
 
-    # LLM providers
+    # Fournisseurs de LLM
     groq_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
 
-    # Observability
+    # Observabilité
     langfuse_public_key: str | None = None
     langfuse_secret_key: SecretStr | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
 
-    # Paths and logging
+    # Chemins et journalisation
     data_dir: Path = REPO_ROOT / "data"
     log_level: str = "INFO"
 
     @field_validator("data_dir", mode="before")
     @classmethod
     def _empty_data_dir_uses_default(cls, value: object) -> object:
-        # An empty DATA_DIR in .env falls back to <repo>/data
+        # Un DATA_DIR vide dans le .env revient au dossier <dépôt>/data
         if value in (None, ""):
             return REPO_ROOT / "data"
         return value
