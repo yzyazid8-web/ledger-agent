@@ -90,3 +90,11 @@ def test_synonyms_map_labels_to_the_concept_actually_used(store: FactStore) -> N
 
 def test_unknown_ticker_has_no_concepts(store: FactStore) -> None:
     assert store.search_concepts("capex", "NOPE") == []
+
+
+def test_ticker_and_period_are_normalised_and_validated(store: FactStore) -> None:
+    fact = store.get_fact("mmm", "PaymentsToAcquirePropertyPlantAndEquipment", 2018, "fy")
+
+    assert fact is not None and fact.value == 1577e6
+    with pytest.raises(ValueError, match="Période inconnue"):
+        store.get_fact("MMM", "PaymentsToAcquirePropertyPlantAndEquipment", 2018, "H1")

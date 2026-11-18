@@ -1,7 +1,8 @@
 import httpx
 import pytest
 
-from ledger_agent.ingestion.edgar_client import EdgarClient, EdgarError, RateLimiter
+from ledger_agent.common.rate_limit import RateLimiter
+from ledger_agent.ingestion.edgar_client import EdgarClient, EdgarError
 
 USER_AGENT = "ledger-agent-tests test@example.com"
 
@@ -17,7 +18,7 @@ def make_client(handler: httpx.MockTransport, sleeps: list[float]) -> EdgarClien
 
 
 def test_user_agent_must_contain_an_email() -> None:
-    with pytest.raises(ValueError, match="contact email"):
+    with pytest.raises(ValueError, match="e-mail de contact"):
         EdgarClient("ledger-agent")
 
 

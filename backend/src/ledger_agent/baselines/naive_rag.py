@@ -1,13 +1,20 @@
-"""RAG naif : une recherche vectorielle top-k, puis une seule génération."""
+"""RAG naïf : une recherche top-k, puis une seule génération."""
 
+import hashlib
 import re
+import time
 from dataclasses import dataclass
 
+from ledger_agent.answer_format import ABSTAIN_MARKER, is_abstention
 from ledger_agent.llm.types import CompletionParams, LLMClient, LLMResponse, Message
-from ledger_agent.retrieval.types import RetrievedChunk, Retriever
+from ledger_agent.retrieval.types import (
+    ReportingRetriever,
+    RetrievedChunk,
+    Retriever,
+    SearchOutcome,
+)
 
-ABSTAIN_MARKER = "INSUFFICIENT_CONTEXT"
-
+# Ne pas modifier sans raison : le texte du prompt fait partie de la clé du cache LLM
 SYSTEM_PROMPT = f"""You are a financial analyst answering questions about company filings.
 Answer ONLY from the numbered context passages. Do not use outside knowledge.
 Cite the passages you use with their number in plain square brackets, e.g. [2].
@@ -16,7 +23,9 @@ Show the key figures and any calculation briefly.
 End with a last line of the form "Final answer: <answer>".
 If the passages do not contain what is needed, reply exactly: {ABSTAIN_MARKER}"""
 
+PROMPT_SHA = hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest()[:12]
 
+# gpt-oss cite parfois dans son format natif 【3†L9-L12】 malgré la consigne
 _CITATION = re.compile(r"\[(\d{1,2})\]|" + chr(0x3010) + r"(\d{1,2})" + chr(0x2020))
 
 
@@ -27,6 +36,8 @@ class RAGAnswer:
     cited: list[RetrievedChunk]
     abstained: bool
     llm: LLMResponse
+    search: SearchOutcome
+    retrieval_s: float
 
 
 def format_context(passages: list[RetrievedChunk]) -> str:
@@ -61,13 +72,24 @@ class NaiveRAG:
         self._top_k = top_k
         self._params = params or CompletionParams()
 
+    def _search(self, question: str) -> SearchOutcome:
+        if isinstance(self._retriever, ReportingRetriever):
+            return self._retriever.search_with_outcome(question, self._top_k)
+        results = self._retriever.search(question, self._top_k)
+        return SearchOutcome(results=results, requested=None, applied=None)
+
     def answer(self, question: str) -> RAGAnswer:
-        passages = self._retriever.search(question, self._top_k)
+        started = time.perf_counter()
+        outcome = self._search(question)
+        retrieval_s = time.perf_counter() - started
+        passages = outcome.results
         response = self._llm.complete(build_messages(question, passages), self._params)
         return RAGAnswer(
             text=response.text,
             retrieved=passages,
             cited=parse_citations(response.text, passages),
-            abstained=ABSTAIN_MARKER in response.text,
+            abstained=is_abstention(response.text),
             llm=response,
+            search=outcome,
+            retrieval_s=retrieval_s,
         )

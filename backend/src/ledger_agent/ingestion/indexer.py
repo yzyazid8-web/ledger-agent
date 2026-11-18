@@ -121,7 +121,9 @@ def sync_dense_index(
             ],
         )
         logger.info(
-            "Embedded %d / %d new chunks", min(done * batch_size, len(missing)), len(missing)
+            "Vectorisés : %d / %d nouveaux chunks",
+            min(done * batch_size, len(missing)),
+            len(missing),
         )
     return len(missing), len(stale)
 

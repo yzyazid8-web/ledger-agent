@@ -37,6 +37,14 @@ def test_same_inputs_give_same_source_id() -> None:
         "1 +",
         "[1, 2]",
         "x if y else z",
+        # Erreurs qui sortaient du contrat CalculationError (relevées par l'audit)
+        "(-8) ** 0.5",
+        "0 ** -1",
+        "min()",
+        "max(5)",
+        "round()",
+        "round(1.5, 99)",
+        "9" * 400,
     ],
 )
 def test_rejected_expressions(expression: str) -> None:
@@ -45,5 +53,5 @@ def test_rejected_expressions(expression: str) -> None:
 
 
 def test_expression_length_is_bounded() -> None:
-    with pytest.raises(CalculationError, match="too long"):
+    with pytest.raises(CalculationError, match="trop longue"):
         calculate("1+" * 300 + "1")

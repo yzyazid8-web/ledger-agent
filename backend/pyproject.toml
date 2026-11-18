@@ -23,6 +23,7 @@ dev = [
     "pytest>=8.3",
     "pre-commit>=4.0",
     "poethepoet>=0.31",
+    "pytest-cov>=7.1.0",
 ]
 
 [build-system]
@@ -42,8 +43,11 @@ test = "pytest"
 check = ["lint", "format-check", "typecheck", "test"]
 ingest-facts = "python -m ledger_agent.ingestion facts"
 ingest-docs = "python -m ledger_agent.ingestion documents"
+coverage = "pytest --cov=ledger_agent --cov-report=term-missing:skip-covered"
 eval = "python -m ledger_agent.evaluation run"
 eval-score = "python -m ledger_agent.evaluation score"
+eval-retrieval = "python -m ledger_agent.evaluation retrieval"
+eval-compare = "python -m ledger_agent.evaluation compare"
 
 [tool.ruff]
 line-length = 100

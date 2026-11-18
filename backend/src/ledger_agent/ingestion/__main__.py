@@ -58,13 +58,13 @@ def ingest_facts(tickers: list[str] | None, refresh: bool) -> None:
             # Le JSON brut est mis en cache : il n'est retéléchargé qu'avec --refresh
             raw_path = raw_dir / f"CIK{company.cik10}.json"
             if refresh or not raw_path.exists():
-                logger.info("Downloading companyfacts for %s", company.ticker)
+                logger.info("Téléchargement des companyfacts de %s", company.ticker)
                 raw_path.write_bytes(client.get_bytes(client.company_facts_url(company.cik)))
 
             payload = json.loads(raw_path.read_text(encoding="utf-8"))
             facts, concepts = parse_company_facts(payload, company.ticker)
             n_rows = upsert_company(con, company.cik, facts, concepts)
-            logger.info("%-5s %8d raw facts", company.ticker, n_rows)
+            logger.info("%-5s %8d faits bruts", company.ticker, n_rows)
             entries.append(
                 {
                     "ticker": company.ticker,
@@ -83,7 +83,7 @@ def ingest_facts(tickers: list[str] | None, refresh: bool) -> None:
         }
 
     write_manifest(db_path.parent / "facts_manifest.json", "xbrl_facts", entries, totals=totals)
-    logger.info("Fact store ready at %s: %s", db_path, totals)
+    logger.info("Base de faits prête dans %s : %s", db_path, totals)
 
 
 def ingest_documents(scope: Scope, refresh: bool, rebuild: bool) -> None:
@@ -100,7 +100,7 @@ def ingest_documents(scope: Scope, refresh: bool, rebuild: bool) -> None:
     with httpx.Client(timeout=120.0, follow_redirects=True) as http:
         download_metadata(raw_dir, http, refresh)
         documents = select_documents(raw_dir, scope)
-        logger.info("%d documents in scope '%s'", len(documents), scope)
+        logger.info("%d documents dans le périmètre '%s'", len(documents), scope)
 
         for document in documents:
             pdf_path = download_pdf(document, pdf_dir, http, refresh)
@@ -146,7 +146,7 @@ def ingest_documents(scope: Scope, refresh: bool, rebuild: bool) -> None:
         scope=scope,
         totals=totals,
     )
-    logger.info("Document indexes ready in %s: %s", index_dir, totals)
+    logger.info("Index documentaires prêts dans %s : %s", index_dir, totals)
 
 
 def main() -> None:

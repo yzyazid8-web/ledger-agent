@@ -2,9 +2,10 @@
 
 from collections.abc import Sequence
 
-from ledger_agent.retrieval.query_analysis import filter_cascade
+from ledger_agent.retrieval.fallback import search_with_fallback
+from ledger_agent.retrieval.query_analysis import filters_from_question
 from ledger_agent.retrieval.reranker import Reranker
-from ledger_agent.retrieval.types import RetrievedChunk, Retriever, SearchFilters
+from ledger_agent.retrieval.types import RetrievedChunk, Retriever, SearchFilters, SearchOutcome
 
 # Constante usuelle de la Reciprocal Rank Fusion : elle atténue l'écart entre les premiers rangs
 RRF_K = 60
@@ -70,13 +71,12 @@ class AutoFilterRetriever:
     def __init__(self, inner: Retriever) -> None:
         self._inner = inner
 
+    def search_with_outcome(self, query: str, k: int) -> SearchOutcome:
+        return search_with_fallback(self._inner, query, k, filters_from_question(query))
+
     def search(
         self, query: str, k: int, filters: SearchFilters | None = None
     ) -> list[RetrievedChunk]:
-        cascade = [filters] if filters is not None else filter_cascade(query)
-        results: list[RetrievedChunk] = []
-        for candidate in cascade:
-            results = self._inner.search(query, k, candidate)
-            if len(results) >= k:
-                return results
-        return results
+        if filters is not None:
+            return search_with_fallback(self._inner, query, k, filters).results
+        return self.search_with_outcome(query, k).results

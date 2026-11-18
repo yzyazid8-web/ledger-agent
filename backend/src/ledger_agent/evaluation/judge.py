@@ -1,20 +1,27 @@
 """Juge LLM pour les réponses rédigées, avec une grille fixe et une sortie JSON."""
 
+import hashlib
 import json
 from dataclasses import dataclass
 
 from ledger_agent.llm.types import CompletionParams, LLMClient, Message
 
+# La longueur de la réponse ne doit pas jouer : les juges LLM favorisent sinon les réponses longues
 JUDGE_PROMPT = """You grade answers to financial questions against a reference answer.
 
 Rules:
 - "correct": the candidate reaches the same conclusion as the reference and its key
-  figures agree (small rounding differences are fine). Extra correct detail is fine.
-- "incorrect": wrong conclusion, wrong key figure, or contradicts the reference.
+  figures agree (small rounding differences are fine).
+- "incorrect": wrong conclusion, wrong key figure, missing the key point of the
+  reference, or contradicts the reference.
 - "abstained": the candidate declines to answer or says the information is missing.
+Judge only the substance. The length, tone or amount of detail of the candidate
+must not influence the verdict.
 
 Reply with JSON only, in this shape:
 {"verdict": "correct" | "incorrect" | "abstained", "reason": "<one sentence>"}"""
+
+JUDGE_PROMPT_SHA = hashlib.sha256(JUDGE_PROMPT.encode()).hexdigest()[:12]
 
 VERDICTS = ("correct", "incorrect", "abstained")
 

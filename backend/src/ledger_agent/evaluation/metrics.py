@@ -1,8 +1,10 @@
-"""Métriques calculées par règles, sans LLM : exactitude numérique, abstention, recherche."""
+"""Métriques calculées par règles, sans LLM : exactitude numérique et recherche."""
 
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+
+from ledger_agent.answer_format import extract_final_answer
 
 _SCALES = {
     "thousand": 1e3,
@@ -17,8 +19,9 @@ _SCALES = {
     "trillion": 1e12,
 }
 
+# Pas de lettre ni de chiffre juste avant : « FY2018 » ou « Q4 » ne sont pas des montants
 _NUMBER = re.compile(
-    r"(?P<neg>[-(])?\s*\$?\s*"
+    r"(?<![A-Za-z0-9.])(?P<neg>[-(])?\s*(?P<dollar>\$)?\s*"
     r"(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)"
     r"\s*(?P<pct>%|percent\b)?"
     r"\s*(?P<scale>thousand|million|billion|trillion|mn|mm|bn|k|m|b)?\b",
@@ -31,19 +34,13 @@ _NUMERIC_ANSWER = re.compile(
     re.IGNORECASE,
 )
 
-ABSTAIN_PATTERNS = (
-    "insufficient_context",
-    "insufficient context",
-    "cannot answer",
-    "can't answer",
-    "unable to answer",
-    "unable to determine",
-    "not enough information",
-    "insufficient information",
-    "do not contain",
-    "does not contain",
-    "not provided in the",
+# Mots qui expriment un écart négatif sans signe moins : « a decrease of 0.02 »
+_NEGATIVE_WORDS = re.compile(
+    r"\b(decrease|decreased|decline|declined|drop|dropped|fell|fall|lower|loss|negative|"
+    r"down|reduction|reduced|shrunk|shrank|contraction)\b",
+    re.IGNORECASE,
 )
+NEGATIVE_WINDOW = 40
 
 DEFAULT_REL_TOL = 0.01
 
@@ -54,16 +51,17 @@ class NumberMention:
     decimals: int
     is_percent: bool
     scale: float
+    negative: bool = False
+    monetary: bool = False
 
-    def variants(self) -> set[float]:
-        """Valeurs plausibles d'un même nombre selon l'unité sous-entendue.
-
-        FinanceBench exprime souvent les montants en millions sans le dire ($1577.00) :
-        « $1.577 billion » doit donc aussi valoir 1577 une fois exprimé en millions.
-        """
+    def variants(self, allow_unscaled: bool) -> set[float]:
+        """Valeurs plausibles d'un même nombre selon l'unité sous-entendue."""
         absolute = self.raw * self.scale
-        values = {self.raw, absolute}
+        values = {absolute}
+        if self.scale == 1.0 or allow_unscaled:
+            values.add(self.raw)
         if self.scale != 1.0:
+            # FinanceBench exprime souvent les montants en millions sans le dire ($1577.00)
             values |= {absolute / 1e6, absolute / 1e3}
         if self.is_percent:
             values.add(self.raw / 100)
@@ -73,15 +71,20 @@ class NumberMention:
 def parse_numbers(text: str) -> list[NumberMention]:
     mentions = []
     for match in _NUMBER.finditer(text):
+        # « 3M » est le nom de l'entreprise, pas 3 millions
+        if re.fullmatch(r"3M", match.group(0).strip()):
+            continue
         digits = match.group("num").replace(",", "")
         scale_word = (match.group("scale") or "").lower()
+        before = text[max(0, match.start() - NEGATIVE_WINDOW) : match.start()]
         mentions.append(
             NumberMention(
-                # Le signe est ignoré : « baisse de 4 % » et « -4 % » désignent le même écart
                 raw=abs(float(digits)),
                 decimals=len(digits.split(".")[1]) if "." in digits else 0,
                 is_percent=match.group("pct") is not None,
                 scale=_SCALES.get(scale_word, 1.0),
+                negative=match.group("neg") is not None or bool(_NEGATIVE_WORDS.search(before)),
+                monetary=match.group("dollar") is not None,
             )
         )
     return mentions
@@ -93,24 +96,19 @@ def is_numeric_answer(answer: str) -> bool:
 
 
 def numbers_match(gold: NumberMention, predicted: NumberMention, rel_tol: float) -> bool:
-    # Tolérance d'arrondi : « 14.9 » accepte tout ce qui s'arrondit à 14.9
+    # Une référence négative exige une prédiction négative ; une référence positive
+    # accepte les deux, car « baisse de 1.9 % » répond juste à « de combien a-t-il baissé »
+    if gold.negative and not predicted.negative:
+        return False
+    # Un montant mis à l'échelle (« 1.5 billion ») ne vaut 1.5 que face à un montant en dollars
+    allow_unscaled = gold.monetary
     rounding_tol = 0.5 * 10 ** (-gold.decimals)
-    for g in gold.variants():
-        # La tolérance d'arrondi suit l'échelle de la variante (x1e6 pour « million »…)
+    for g in gold.variants(allow_unscaled=True):
         factor = abs(g / gold.raw) if gold.raw else 1.0
         tolerance = max(rel_tol * abs(g), rounding_tol * factor) + 1e-12
-        if any(abs(p - g) <= tolerance for p in predicted.variants()):
+        if any(abs(p - g) <= tolerance for p in predicted.variants(allow_unscaled)):
             return True
     return False
-
-
-_FINAL_ANSWER = re.compile(r"final answer\s*:", re.IGNORECASE)
-
-
-def extract_final_answer(prediction: str) -> str:
-    """Renvoie ce qui suit le dernier « Final answer: », ou tout le texte à défaut."""
-    matches = list(_FINAL_ANSWER.finditer(prediction))
-    return prediction[matches[-1].end() :].strip() if matches else prediction
 
 
 def numeric_correct(gold_answer: str, prediction: str, rel_tol: float = DEFAULT_REL_TOL) -> bool:
@@ -123,11 +121,6 @@ def numeric_correct(gold_answer: str, prediction: str, rel_tol: float = DEFAULT_
     return any(numbers_match(gold, p, rel_tol) for p in candidates)
 
 
-def is_abstention(prediction: str) -> bool:
-    lowered = prediction.lower()
-    return any(pattern in lowered for pattern in ABSTAIN_PATTERNS)
-
-
 def page_hit(pages: Iterable[tuple[str, int]], gold: Iterable[tuple[str, int]]) -> bool:
     return not set(pages).isdisjoint(set(gold))
 
@@ -135,7 +128,7 @@ def page_hit(pages: Iterable[tuple[str, int]], gold: Iterable[tuple[str, int]]) 
 def citation_precision(
     cited: list[tuple[str, int]], gold: Iterable[tuple[str, int]]
 ) -> float | None:
-    """Part des passages cités qui sont des pages justificatives. None si rien n'est cité."""
+    """Part des passages cités qui sont des pages justificatives, ou None si rien n'est cité."""
     if not cited:
         return None
     gold_set = set(gold)
