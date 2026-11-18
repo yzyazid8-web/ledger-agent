@@ -26,6 +26,11 @@ def load_universe() -> tuple[Company, ...]:
     return tuple(Company(name=e["name"], ticker=e["ticker"], cik=int(e["cik"])) for e in entries)
 
 
+def find_company(name: str) -> Company | None:
+    """Retrouve une entreprise par son nom FinanceBench, ou None si elle est hors univers."""
+    return next((c for c in load_universe() if c.name == name), None)
+
+
 def select_companies(tickers: Iterable[str] | None = None) -> tuple[Company, ...]:
     """Renvoie tout l'univers, ou seulement les tickers demandés (insensible à la casse)."""
     universe = load_universe()
