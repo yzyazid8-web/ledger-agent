@@ -4,8 +4,16 @@ version = "0.1.0"
 description = "Agentic RAG over SEC filings with fully traceable numbers"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "bm25s>=0.3.16",
+    "duckdb>=1.1",
+    "fastembed>=0.9.1",
+    "httpx>=0.28",
+    "pyarrow>=18.0",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "pymupdf>=2.1",
+    "pystemmer>=3.1.0",
+    "qdrant-client>=1.20.0",
 ]
 
 [dependency-groups]
@@ -24,7 +32,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ledger_agent"]
 
-# Tasks (cross-platform replacement for a Makefile): uv run poe <task>
+# Tâches (remplace un Makefile, fonctionne sous Windows et Linux) : uv run poe <tâche>
 [tool.poe.tasks]
 lint = "ruff check src tests"
 format = "ruff format src tests"
@@ -32,6 +40,8 @@ format-check = "ruff format --check src tests"
 typecheck = "mypy src"
 test = "pytest"
 check = ["lint", "format-check", "typecheck", "test"]
+ingest-facts = "python -m ledger_agent.ingestion facts"
+ingest-docs = "python -m ledger_agent.ingestion documents"
 
 [tool.ruff]
 line-length = 100
@@ -45,6 +55,10 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*", "pymupdf", "fastembed", "fastembed.*", "bm25s", "Stemmer"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -16,7 +16,7 @@ node_modules/
 .next/
 out/
 
-# Data and local artefacts
+# Données et artefacts locaux
 data/
 .cache/
 *.duckdb
@@ -27,12 +27,12 @@ data/
 .env.*
 !.env.example
 
-# Editors and OS
+# Éditeurs et système
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 
-# Assistant files
+# Fichiers d'assistant
 CLAUDE.md
 .claude/

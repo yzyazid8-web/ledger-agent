@@ -1,0 +1,165 @@
+# Entreprises de FinanceBench associées à leurs identifiants SEC.
+# Les CIK sont écrits en dur volontairement : les entreprises retirées de la cote
+# (Activision Blizzard, Foot Locker) n'apparaissent plus dans
+# sec.gov/files/company_tickers.json, mais leurs dépôts restent disponibles.
+# `name` correspond au champ `company` de FinanceBench.
+
+[[companies]]
+name = "3M"
+ticker = "MMM"
+cik = 66740
+
+[[companies]]
+name = "AES Corporation"
+ticker = "AES"
+cik = 874761
+
+[[companies]]
+name = "AMD"
+ticker = "AMD"
+cik = 2488
+
+[[companies]]
+name = "Activision Blizzard"
+ticker = "ATVI"
+cik = 718877
+
+[[companies]]
+name = "Adobe"
+ticker = "ADBE"
+cik = 796343
+
+[[companies]]
+name = "Amazon"
+ticker = "AMZN"
+cik = 1018724
+
+[[companies]]
+name = "Amcor"
+ticker = "AMCR"
+cik = 1748790
+
+[[companies]]
+name = "American Express"
+ticker = "AXP"
+cik = 4962
+
+[[companies]]
+name = "American Water Works"
+ticker = "AWK"
+cik = 1410636
+
+[[companies]]
+name = "Best Buy"
+ticker = "BBY"
+cik = 764478
+
+[[companies]]
+name = "Block"
+ticker = "XYZ"
+cik = 1512673
+
+[[companies]]
+name = "Boeing"
+ticker = "BA"
+cik = 12927
+
+[[companies]]
+name = "CVS Health"
+ticker = "CVS"
+cik = 64803
+
+[[companies]]
+name = "Coca-Cola"
+ticker = "KO"
+cik = 21344
+
+[[companies]]
+name = "Corning"
+ticker = "GLW"
+cik = 24741
+
+[[companies]]
+name = "Costco"
+ticker = "COST"
+cik = 909832
+
+[[companies]]
+name = "Foot Locker"
+ticker = "FL"
+cik = 850209
+
+[[companies]]
+name = "General Mills"
+ticker = "GIS"
+cik = 40704
+
+[[companies]]
+name = "JPMorgan"
+ticker = "JPM"
+cik = 19617
+
+[[companies]]
+name = "Johnson & Johnson"
+ticker = "JNJ"
+cik = 200406
+
+[[companies]]
+name = "Kraft Heinz"
+ticker = "KHC"
+cik = 1637459
+
+[[companies]]
+name = "Lockheed Martin"
+ticker = "LMT"
+cik = 936468
+
+[[companies]]
+name = "MGM Resorts"
+ticker = "MGM"
+cik = 789570
+
+[[companies]]
+name = "Microsoft"
+ticker = "MSFT"
+cik = 789019
+
+[[companies]]
+name = "Netflix"
+ticker = "NFLX"
+cik = 1065280
+
+[[companies]]
+name = "Nike"
+ticker = "NKE"
+cik = 320187
+
+[[companies]]
+name = "Paypal"
+ticker = "PYPL"
+cik = 1633917
+
+[[companies]]
+name = "PepsiCo"
+ticker = "PEP"
+cik = 77476
+
+[[companies]]
+name = "Pfizer"
+ticker = "PFE"
+cik = 78003
+
+[[companies]]
+name = "Ulta Beauty"
+ticker = "ULTA"
+cik = 1403568
+
+[[companies]]
+name = "Verizon"
+ticker = "VZ"
+cik = 732712
+
+[[companies]]
+name = "Walmart"
+ticker = "WMT"
+cik = 104169
