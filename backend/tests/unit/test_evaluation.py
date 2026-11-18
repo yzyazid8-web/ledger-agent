@@ -141,13 +141,15 @@ def test_resume_is_refused_when_the_config_changed(
     monkeypatch.setattr(runs, "EVAL_DIR", tmp_path)
     settings = Settings(_env_file=None, data_dir=tmp_path)  # type: ignore[call-arg]
 
-    run_dir = runs.prepare_run(make_config(top_k=5), "dev", ["q1"], settings, expected=1)
+    run_dir = runs.prepare_run(
+        make_config(top_k=5), "dev", ["q1"], settings, expected=1, prompt_sha="p"
+    )
     # Même configuration : la reprise est acceptée et le commit de la session est noté
-    runs.prepare_run(make_config(top_k=5), "dev", ["q1"], settings, expected=1)
+    runs.prepare_run(make_config(top_k=5), "dev", ["q1"], settings, expected=1, prompt_sha="p")
     assert len(json.loads((run_dir / "run.json").read_text(encoding="utf-8"))["git"]) == 2
 
     with pytest.raises(runs.RunMismatchError, match="changé"):
-        runs.prepare_run(make_config(top_k=10), "dev", ["q1"], settings, expected=1)
+        runs.prepare_run(make_config(top_k=10), "dev", ["q1"], settings, expected=1, prompt_sha="p")
 
 
 # Notation

@@ -21,6 +21,11 @@ _DA = (
     "DepreciationAndAmortization",
     "DepreciationAmortizationAndAccretionNet",
 )
+_SHORT_TERM_INVESTMENTS = (
+    "ShortTermInvestments",
+    "MarketableSecuritiesCurrent",
+    "AvailableForSaleSecuritiesDebtSecuritiesCurrent",
+)
 METRIC_SYNONYMS: dict[str, tuple[str, ...]] = {
     "revenue": _REVENUE,
     "net sales": _REVENUE,
@@ -37,6 +42,13 @@ METRIC_SYNONYMS: dict[str, tuple[str, ...]] = {
     "eps": ("EarningsPerShareDiluted", "EarningsPerShareBasic"),
     "capital expenditure": _CAPEX,
     "capex": _CAPEX,
+    # Plus long que « property plant and equipment » : l'emporte quand les deux sont présents
+    "purchases of property plant and equipment": _CAPEX,
+    "property plant and equipment": ("PropertyPlantAndEquipmentNet",),
+    "pp&e": ("PropertyPlantAndEquipmentNet",),
+    "short-term investments": _SHORT_TERM_INVESTMENTS,
+    "marketable securities": _SHORT_TERM_INVESTMENTS,
+    "receivables": ("AccountsReceivableNetCurrent",),
     "depreciation and amortization": _DA,
     "d&a": _DA,
     "operating cash flow": ("NetCashProvidedByUsedInOperatingActivities",),
@@ -66,6 +78,9 @@ METRIC_SYNONYMS: dict[str, tuple[str, ...]] = {
 
 _TOKEN = re.compile(r"[a-z]{3,}")
 _CAMEL = re.compile(r"(?<=[a-z])(?=[A-Z])")
+# Sans synonyme, un concept n'est proposé que s'il reprend l'essentiel des mots demandés :
+# sinon « capital expenditures » mènerait à « AdditionalPaidInCapital » sur le seul mot « capital »
+MIN_LEXICAL_SCORE = 0.6
 
 # Types de période acceptés pour un exercice ou un trimestre
 _PERIOD_TYPES = {"FY": ("annual", "instant"), "Q4": ("quarter",)}
@@ -98,6 +113,8 @@ class FactResult:
     filed: str
     # Valeur la plus récente si le chiffre a été retraité dans un dépôt ultérieur
     latest_value: float | None = None
+    # Libellé officiel du concept, à montrer au LLM plutôt que le libellé demandé
+    label: str = ""
 
     @property
     def source_id(self) -> str:
@@ -142,12 +159,13 @@ class FactStore:
         self, query: str, ticker: str | None = None, limit: int = 8
     ) -> list[ConceptMatch]:
         """Concepts XBRL correspondant à un libellé, limités à ceux déclarés par l'entreprise."""
-        lowered = query.lower()
+        # « Property, plant and equipment » et « property plant and equipment » sont équivalents
+        lowered = " ".join(re.sub(r"[^a-z0-9&\- ]", " ", query.lower()).split())
         scores: dict[tuple[str, str], float] = {}
 
-        # 1. Synonymes connus, prioritaires et dans leur ordre de préférence
+        # 1. Synonymes connus, prioritaires et dans leur ordre de préférence (pluriel accepté)
         for phrase, concepts in METRIC_SYNONYMS.items():
-            if re.search(rf"(?<![a-z]){re.escape(phrase)}(?![a-z])", lowered):
+            if re.search(rf"(?<![a-z]){re.escape(phrase)}s?(?![a-z])", lowered):
                 for rank, concept in enumerate(concepts):
                     key = ("us-gaap", concept)
                     scores[key] = max(scores.get(key, 0.0), 10.0 - rank + len(phrase) / 100)
@@ -156,9 +174,9 @@ class FactStore:
         query_words = _words(query)
         if query_words:
             for key, label in self._labels.items():
-                overlap = len(query_words & (_words(label) | _words(key[1])))
-                if overlap:
-                    scores[key] = max(scores.get(key, 0.0), overlap / len(query_words))
+                score = len(query_words & (_words(label) | _words(key[1]))) / len(query_words)
+                if score >= MIN_LEXICAL_SCORE:
+                    scores[key] = max(scores.get(key, 0.0), score)
 
         matches = [
             ConceptMatch(tx, c, self._labels.get((tx, c), c), self._facts_for(ticker, tx, c), s)
@@ -214,4 +232,5 @@ class FactStore:
             accn=accn,
             filed=str(filed),
             latest_value=float(latest) if latest is not None and latest != value else None,
+            label=self._labels.get((taxonomy, concept), concept),
         )
