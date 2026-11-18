@@ -1,0 +1,18 @@
+{
+  "name": "naive",
+  "pipeline": "naive_rag",
+  "top_k": 5,
+  "llm": {
+    "provider": "groq",
+    "model": "openai/gpt-oss-120b",
+    "max_tokens": 1500,
+    "temperature": 0.0,
+    "reasoning_effort": "low",
+    "tokens_per_minute": 8000
+  },
+  "judge": {
+    "provider": "gemini",
+    "model": "gemini-3.5-flash-lite",
+    "requests_per_minute": 10
+  }
+}

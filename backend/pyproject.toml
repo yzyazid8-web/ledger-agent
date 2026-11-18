@@ -42,6 +42,8 @@ test = "pytest"
 check = ["lint", "format-check", "typecheck", "test"]
 ingest-facts = "python -m ledger_agent.ingestion facts"
 ingest-docs = "python -m ledger_agent.ingestion documents"
+eval = "python -m ledger_agent.evaluation run"
+eval-score = "python -m ledger_agent.evaluation score"
 
 [tool.ruff]
 line-length = 100

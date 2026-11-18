@@ -1,0 +1,24 @@
+# RAG naïf : référence du benchmark.
+# Recherche vectorielle top-k sans filtre, une seule génération, aucune vérification.
+
+name = "naive"
+pipeline = "naive_rag"
+
+[retrieval]
+top_k = 5
+
+[llm]
+provider = "groq"
+model = "openai/gpt-oss-120b"
+max_tokens = 1500
+temperature = 0.0
+reasoning_effort = "low"
+# Quota de l'offre gratuite Groq pour ce modèle
+tokens_per_minute = 8000
+
+[judge]
+provider = "gemini"
+# Version « lite » : environ 2 s par jugement, les versions complètes étaient saturées
+# (erreurs 503) ou trop lentes (près de 50 s par jugement à cause du raisonnement interne)
+model = "gemini-3.5-flash-lite"
+requests_per_minute = 10
