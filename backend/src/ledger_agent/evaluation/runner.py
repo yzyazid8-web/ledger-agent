@@ -9,6 +9,7 @@
 import json
 import logging
 import statistics
+import time
 from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
@@ -20,7 +21,13 @@ from qdrant_client import QdrantClient
 
 from ledger_agent.baselines.naive_rag import NaiveRAG, RAGAnswer
 from ledger_agent.config import Settings, get_settings
-from ledger_agent.evaluation.config import EVAL_DIR, JudgeConfig, LLMConfig, RunConfig
+from ledger_agent.evaluation.config import (
+    EVAL_DIR,
+    JudgeConfig,
+    LLMConfig,
+    RetrievalConfig,
+    RunConfig,
+)
 from ledger_agent.evaluation.dataset import (
     Question,
     Split,
@@ -44,7 +51,11 @@ from ledger_agent.llm.gemini import GeminiClient
 from ledger_agent.llm.openai_compatible import OpenAICompatibleClient
 from ledger_agent.llm.types import LLMClient, LLMError
 from ledger_agent.retrieval.dense import DenseRetriever
+from ledger_agent.retrieval.hybrid import AutoFilterRetriever, HybridRetriever
+from ledger_agent.retrieval.lexical import LexicalRetriever
+from ledger_agent.retrieval.reranker import CrossEncoderReranker
 from ledger_agent.retrieval.store import ChunkStore
+from ledger_agent.retrieval.types import Retriever
 
 logger = logging.getLogger(__name__)
 
@@ -90,18 +101,84 @@ def build_judge(config: JudgeConfig, settings: Settings, stack: ExitStack) -> LL
     return LLMJudge(cached)
 
 
+def build_retriever(config: RetrievalConfig, settings: Settings, stack: ExitStack) -> Retriever:
+    """Assemble la chaîne de recherche décrite par la configuration."""
+    store = ChunkStore.from_parquet(settings.data_dir / "processed" / "chunks.parquet")
+    qdrant = QdrantClient(path=str(settings.data_dir / "indexes" / "qdrant"))
+    stack.callback(qdrant.close)
+    models_dir = settings.data_dir / "models"
+    retriever: Retriever = DenseRetriever(qdrant, FastEmbedEmbedder(cache_dir=models_dir), store)
+
+    if config.mode not in ("dense", "hybrid"):
+        raise ValueError(f"Unsupported retrieval mode: {config.mode}")
+    lexical = (
+        LexicalRetriever.load(settings.data_dir / "indexes" / "bm25", store)
+        if config.mode == "hybrid"
+        else None
+    )
+    reranker = CrossEncoderReranker(config.reranker, models_dir) if config.reranker else None
+    if lexical is not None or reranker is not None:
+        retriever = HybridRetriever(
+            retriever,
+            lexical,
+            reranker,
+            candidates=config.candidates,
+            lexical_weight=config.lexical_weight,
+        )
+
+    if config.filters == "rules":
+        retriever = AutoFilterRetriever(retriever)
+    elif config.filters != "none":
+        raise ValueError(f"Unsupported filters: {config.filters}")
+    return retriever
+
+
 @contextmanager
 def build_pipeline(config: RunConfig, settings: Settings) -> Iterator[NaiveRAG]:
     if config.pipeline != "naive_rag":
         raise ValueError(f"Unsupported pipeline: {config.pipeline}")
     with ExitStack() as stack:
-        store = ChunkStore.from_parquet(settings.data_dir / "processed" / "chunks.parquet")
-        qdrant = QdrantClient(path=str(settings.data_dir / "indexes" / "qdrant"))
-        stack.callback(qdrant.close)
-        embedder = FastEmbedEmbedder(cache_dir=settings.data_dir / "models")
-        retriever = DenseRetriever(qdrant, embedder, store)
+        retriever = build_retriever(config.retrieval, settings, stack)
         llm = build_llm(config.llm, settings, stack)
-        yield NaiveRAG(retriever, llm, top_k=config.top_k, params=config.llm.params())
+        yield NaiveRAG(retriever, llm, top_k=config.retrieval.top_k, params=config.llm.params())
+
+
+# Évaluation de la recherche seule (gratuite : aucun appel LLM)
+
+RETRIEVAL_KS = (1, 3, 5, 10)
+
+
+def evaluate_retrieval(config: RunConfig, split: Split) -> dict[str, Any]:
+    """Part des questions dont une page justificative figure dans les k premiers résultats."""
+    settings = get_settings()
+    questions = load_all_questions(settings)
+    selected = select_split(questions, split, load_or_create_split(SPLITS_FILE, questions))
+    hits = dict.fromkeys(RETRIEVAL_KS, 0)
+
+    with ExitStack() as stack:
+        retriever = build_retriever(config.retrieval, settings, stack)
+        started = time.perf_counter()
+        for question in selected:
+            gold = {(e.doc_name, e.page_index) for e in question.evidence}
+            found = [
+                (r.chunk.doc_name, r.chunk.page_index)
+                for r in retriever.search(question.question, max(RETRIEVAL_KS))
+            ]
+            for k in RETRIEVAL_KS:
+                hits[k] += page_hit(found[:k], gold)
+        elapsed = time.perf_counter() - started
+
+    summary: dict[str, Any] = {
+        "run": f"{config.name}-{split}",
+        "questions": len(selected),
+        **{f"hit@{k}": round(hits[k] / len(selected), 4) for k in RETRIEVAL_KS},
+        "ms_per_question": round(elapsed / len(selected) * 1000),
+        "retrieval": asdict(config.retrieval),
+    }
+    run_dir = run_dir_for(config, split)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "retrieval.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    return summary
 
 
 # Phase 1 : prédictions

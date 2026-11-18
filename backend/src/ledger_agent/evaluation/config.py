@@ -35,10 +35,23 @@ class JudgeConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class RetrievalConfig:
+    top_k: int = 5
+    # "dense" : vecteurs seuls ; "hybrid" : vecteurs + BM25 fusionnés par RRF
+    mode: str = "dense"
+    # "none" : aucun filtre ; "rules" : entreprise et exercice repérés dans la question
+    filters: str = "none"
+    lexical_weight: float = 1.0
+    candidates: int = 30
+    # Nom d'un cross-encoder fastembed, ou None pour ne pas reclasser
+    reranker: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class RunConfig:
     name: str
     pipeline: str
-    top_k: int
+    retrieval: RetrievalConfig
     llm: LLMConfig
     judge: JudgeConfig
 
@@ -52,7 +65,7 @@ def load_run_config(path_or_name: str | Path) -> RunConfig:
     return RunConfig(
         name=raw["name"],
         pipeline=raw["pipeline"],
-        top_k=int(raw["retrieval"]["top_k"]),
+        retrieval=RetrievalConfig(**raw.get("retrieval", {})),
         llm=LLMConfig(**raw["llm"]),
         judge=JudgeConfig(**raw["judge"]),
     )

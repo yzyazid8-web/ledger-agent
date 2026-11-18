@@ -42,3 +42,11 @@ class LLMClient(Protocol):
 
 class LLMError(RuntimeError):
     """Levée quand le fournisseur échoue après toutes les relances."""
+
+
+class LLMQuotaError(LLMError):
+    """Quota (souvent quotidien) épuisé : inutile de réessayer avant `retry_after_s` secondes."""
+
+    def __init__(self, message: str, retry_after_s: float) -> None:
+        super().__init__(message)
+        self.retry_after_s = retry_after_s

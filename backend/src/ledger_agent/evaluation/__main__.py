@@ -3,6 +3,7 @@
 Utilisation :
     python -m ledger_agent.evaluation run naive --split dev [--limit 10]
     python -m ledger_agent.evaluation score naive --split dev [--no-judge]
+    python -m ledger_agent.evaluation retrieval hybrid --split dev
 """
 
 import argparse
@@ -11,7 +12,12 @@ import logging
 
 from ledger_agent.config import get_settings
 from ledger_agent.evaluation.config import load_run_config
-from ledger_agent.evaluation.runner import run_dir_for, run_predictions, score_run
+from ledger_agent.evaluation.runner import (
+    evaluate_retrieval,
+    run_dir_for,
+    run_predictions,
+    score_run,
+)
 
 
 def main() -> None:
@@ -21,11 +27,13 @@ def main() -> None:
     for command, help_text in (
         ("run", "Génère les réponses puis calcule les métriques"),
         ("score", "Recalcule les métriques d'une exécution existante"),
+        ("retrieval", "Mesure la recherche seule (hit@k), sans appel LLM"),
     ):
         p = sub.add_parser(command, help=help_text)
         p.add_argument("config", help="Nom de configuration (ex. naive) ou chemin .toml")
         p.add_argument("--split", choices=["dev", "test", "all"], default="dev")
-        p.add_argument("--no-judge", action="store_true", help="N'appelle pas le juge LLM")
+        if command in ("run", "score"):
+            p.add_argument("--no-judge", action="store_true", help="N'appelle pas le juge LLM")
         if command == "run":
             p.add_argument("--limit", type=int, help="Ne traite que les N premières questions")
 
@@ -38,12 +46,14 @@ def main() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     config = load_run_config(args.config)
-    if args.command == "run":
-        run_dir = run_predictions(config, args.split, args.limit)
+    if args.command == "retrieval":
+        summary = evaluate_retrieval(config, args.split)
     else:
-        run_dir = run_dir_for(config, args.split)
-
-    summary = score_run(run_dir, config, use_judge=not args.no_judge)
+        if args.command == "run":
+            run_dir = run_predictions(config, args.split, args.limit)
+        else:
+            run_dir = run_dir_for(config, args.split)
+        summary = score_run(run_dir, config, use_judge=not args.no_judge)
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 

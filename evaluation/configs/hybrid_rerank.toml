@@ -1,0 +1,26 @@
+# RAG hybride + reclassement par cross-encoder.
+# MiniLM-L6 sur 15 candidats : environ 2 s par recherche sur CPU (L12 sur 30 : 8 s).
+
+name = "hybrid_rerank"
+pipeline = "naive_rag"
+
+[retrieval]
+top_k = 5
+mode = "hybrid"
+filters = "rules"
+lexical_weight = 0.5
+candidates = 15
+reranker = "Xenova/ms-marco-MiniLM-L-6-v2"
+
+[llm]
+provider = "groq"
+model = "openai/gpt-oss-120b"
+max_tokens = 1500
+temperature = 0.0
+reasoning_effort = "low"
+tokens_per_minute = 8000
+
+[judge]
+provider = "gemini"
+model = "gemini-3.5-flash-lite"
+requests_per_minute = 10

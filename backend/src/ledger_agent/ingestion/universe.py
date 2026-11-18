@@ -12,6 +12,8 @@ class Company:
     name: str
     ticker: str
     cik: int
+    # Autres façons de nommer l'entreprise dans une question (« J&J », « Ulta »…)
+    aliases: tuple[str, ...] = ()
 
     @property
     def cik10(self) -> str:
@@ -23,7 +25,15 @@ class Company:
 def load_universe() -> tuple[Company, ...]:
     raw = (files("ledger_agent.ingestion") / "universe.toml").read_text(encoding="utf-8")
     entries = tomllib.loads(raw)["companies"]
-    return tuple(Company(name=e["name"], ticker=e["ticker"], cik=int(e["cik"])) for e in entries)
+    return tuple(
+        Company(
+            name=e["name"],
+            ticker=e["ticker"],
+            cik=int(e["cik"]),
+            aliases=tuple(e.get("aliases", ())),
+        )
+        for e in entries
+    )
 
 
 def find_company(name: str) -> Company | None:

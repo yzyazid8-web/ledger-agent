@@ -1,0 +1,26 @@
+# RAG hybride : même génération que le RAG naïf, mais une meilleure recherche.
+# Filtres entreprise + exercice repérés par règles, fusion vecteurs + BM25 (RRF).
+
+name = "hybrid"
+pipeline = "naive_rag"
+
+[retrieval]
+top_k = 5
+mode = "hybrid"
+filters = "rules"
+# BM25 à demi-poids : sur ces questions longues, il est moins fiable que les vecteurs
+lexical_weight = 0.5
+candidates = 30
+
+[llm]
+provider = "groq"
+model = "openai/gpt-oss-120b"
+max_tokens = 1500
+temperature = 0.0
+reasoning_effort = "low"
+tokens_per_minute = 8000
+
+[judge]
+provider = "gemini"
+model = "gemini-3.5-flash-lite"
+requests_per_minute = 10
