@@ -49,5 +49,5 @@ def select_companies(tickers: Iterable[str] | None = None) -> tuple[Company, ...
     wanted = {t.upper() for t in tickers}
     unknown = wanted - {c.ticker for c in universe}
     if unknown:
-        raise ValueError(f"Unknown tickers: {sorted(unknown)}")
+        raise ValueError(f"Tickers inconnus : {sorted(unknown)}")
     return tuple(c for c in universe if c.ticker in wanted)

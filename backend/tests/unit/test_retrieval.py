@@ -110,13 +110,34 @@ def test_auto_filter_falls_back_when_results_are_missing() -> None:
     assert len(results) == 1
 
 
-def test_search_tool_builds_page_source_ids() -> None:
+def test_auto_filter_reports_the_filters_actually_applied() -> None:
+    outcome = AutoFilterRetriever(StaticRetriever(ranking("a1"))).search_with_outcome(
+        "3M capex FY2018", k=3
+    )
+
+    assert outcome.requested == SearchFilters(ticker="MMM", fiscal_year=2018)
+    assert outcome.applied is None
+    assert outcome.relaxed
+
+
+def test_search_tool_builds_page_source_ids_and_flags_no_relaxation() -> None:
     tool = SearchFilingsTool(StaticRetriever(ranking("x5")))
 
-    (passage,) = tool.run("capex", ticker="MMM", fiscal_year=2018, k=1)
+    result = tool.run("capex", ticker="mmm", fiscal_year=2018, k=1)
 
+    (passage,) = result.passages
     assert passage.source_id == "doc:MMM_2018_10K:p6"
     assert passage.page_number == 6
+    assert result.applied_filters == {"ticker": "MMM", "fiscal_year": 2018}
+    assert not result.relaxed
+
+
+def test_search_tool_says_when_it_relaxed_the_filters() -> None:
+    result = SearchFilingsTool(StaticRetriever(ranking("x5"))).run("capex", ticker="MMM", k=3)
+
+    assert result.requested_filters == {"ticker": "MMM"}
+    assert result.applied_filters == {}
+    assert result.relaxed
 
 
 # BM25 filtré

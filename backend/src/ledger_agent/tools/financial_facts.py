@@ -70,6 +70,7 @@ _CAMEL = re.compile(r"(?<=[a-z])(?=[A-Z])")
 # Types de période acceptés pour un exercice ou un trimestre
 _PERIOD_TYPES = {"FY": ("annual", "instant"), "Q4": ("quarter",)}
 _QUARTER_TYPES = ("quarter", "instant")
+VALID_PERIODS = ("FY", "Q1", "Q2", "Q3", "Q4")
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +178,9 @@ class FactStore:
         taxonomy: str = "us-gaap",
     ) -> FactResult | None:
         """Le chiffre tel que publié à l'origine pour cet exercice, ou None s'il n'existe pas."""
+        ticker, fiscal_period = ticker.upper(), fiscal_period.upper()
+        if fiscal_period not in VALID_PERIODS:
+            raise ValueError(f"Période inconnue : {fiscal_period} (attendu : {VALID_PERIODS})")
         period_types = _PERIOD_TYPES.get(fiscal_period, _QUARTER_TYPES)
         placeholders = ", ".join("?" for _ in period_types)
         rows = self._con.execute(

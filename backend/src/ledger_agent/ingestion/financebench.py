@@ -62,7 +62,7 @@ def download_metadata(raw_dir: Path, client: httpx.Client, refresh: bool = False
     for name in (QUESTIONS_FILE, DOCUMENTS_FILE):
         target = raw_dir / name
         if refresh or not target.exists():
-            logger.info("Downloading %s", name)
+            logger.info("Téléchargement de %s", name)
             response = client.get(f"{FINANCEBENCH_RAW_URL}/data/{name}")
             response.raise_for_status()
             target.write_bytes(response.content)
@@ -104,7 +104,7 @@ def download_pdf(
     pdf_dir.mkdir(parents=True, exist_ok=True)
     target = pdf_dir / f"{document.doc_name}.pdf"
     if refresh or not target.exists():
-        logger.info("Downloading %s.pdf", document.doc_name)
+        logger.info("Téléchargement de %s.pdf", document.doc_name)
         response = client.get(pdf_url(document.doc_name))
         response.raise_for_status()
         # Écriture atomique : un téléchargement interrompu ne laisse pas de PDF tronqué

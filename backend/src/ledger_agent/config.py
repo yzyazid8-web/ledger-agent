@@ -1,13 +1,15 @@
 """Paramètres de l'application, lus depuis les variables d'environnement et le .env racine."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# src/ledger_agent/config.py -> parents[3] est la racine du dépôt
-REPO_ROOT = Path(__file__).resolve().parents[3]
+# src/ledger_agent/config.py -> parents[3] est la racine du dépôt en installation éditable ;
+# LEDGER_AGENT_ROOT permet de la fixer ailleurs (image Docker, paquet installé)
+REPO_ROOT = Path(os.environ.get("LEDGER_AGENT_ROOT") or Path(__file__).resolve().parents[3])
 
 
 class Settings(BaseSettings):

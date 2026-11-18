@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from functools import cache
 
 from ledger_agent.ingestion.universe import Company, load_universe
+from ledger_agent.retrieval.fallback import relaxation_cascade
 from ledger_agent.retrieval.types import SearchFilters
 
 # « FY2022 », « fiscal year 2022 », « 2022 », « FY2023Q1 » ; « FY22 » est traité à part.
@@ -40,18 +41,16 @@ def extract_entities(question: str) -> QueryEntities:
     return QueryEntities(tickers=tickers, years=tuple(sorted(years)))
 
 
-def filter_cascade(question: str) -> list[SearchFilters | None]:
-    """Filtres à essayer dans l'ordre : entreprise + exercice, entreprise seule, aucun.
-
-    Quand plusieurs années sont citées (« FY2021 vs FY2022 »), on retient la plus
-    récente : c'est le rapport le plus récent qui contient aussi les comparatifs.
-    """
+def filters_from_question(question: str) -> SearchFilters | None:
+    """Entreprise et exercice cités, ou None si l'entreprise est absente ou ambiguë."""
     entities = extract_entities(question)
-    cascade: list[SearchFilters | None] = []
-    if len(entities.tickers) == 1:
-        ticker = entities.tickers[0]
-        if entities.years:
-            cascade.append(SearchFilters(ticker=ticker, fiscal_year=max(entities.years)))
-        cascade.append(SearchFilters(ticker=ticker))
-    cascade.append(None)
-    return cascade
+    if len(entities.tickers) != 1:
+        return None
+    # Plusieurs années (« FY2021 vs FY2022 ») : le rapport le plus récent contient les comparatifs
+    year = max(entities.years) if entities.years else None
+    return SearchFilters(ticker=entities.tickers[0], fiscal_year=year)
+
+
+def filter_cascade(question: str) -> list[SearchFilters | None]:
+    """Filtres à essayer dans l'ordre : entreprise + exercice, entreprise seule, aucun."""
+    return relaxation_cascade(filters_from_question(question))

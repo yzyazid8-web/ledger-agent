@@ -1,7 +1,8 @@
-"""Outil de recherche de passages dans les rapports, avec filtres explicites."""
+"""Outil de recherche de passages dans les rapports, qui dit quels filtres il a appliqués."""
 
 from dataclasses import dataclass
 
+from ledger_agent.retrieval.fallback import search_with_fallback
 from ledger_agent.retrieval.types import RetrievedChunk, Retriever, SearchFilters
 
 
@@ -13,6 +14,18 @@ class Passage:
     header: str
     text: str
     score: float
+
+
+@dataclass(frozen=True, slots=True)
+class SearchFilingsResult:
+    passages: list[Passage]
+    requested_filters: dict[str, str | int]
+    applied_filters: dict[str, str | int]
+
+    @property
+    def relaxed(self) -> bool:
+        """Vrai si les passages ne respectent pas tous les filtres demandés."""
+        return self.requested_filters != self.applied_filters
 
 
 def to_passage(item: RetrievedChunk) -> Passage:
@@ -39,18 +52,20 @@ class SearchFilingsTool:
         fiscal_year: int | None = None,
         doc_name: str | None = None,
         k: int = 5,
-    ) -> list[Passage]:
-        """Cherche avec les filtres donnés, puis les relâche un à un si les résultats manquent."""
-        cascade: list[SearchFilters | None] = []
-        if doc_name or ticker or fiscal_year:
-            cascade.append(SearchFilters(doc_name=doc_name, ticker=ticker, fiscal_year=fiscal_year))
-        if ticker and (doc_name or fiscal_year):
-            cascade.append(SearchFilters(ticker=ticker))
-        cascade.append(None)
-
-        results: list[RetrievedChunk] = []
-        for filters in cascade:
-            results = self._retriever.search(query, k, filters)
-            if len(results) >= k:
-                break
-        return [to_passage(r) for r in results]
+    ) -> SearchFilingsResult:
+        """Cherche avec les filtres donnés, les relâche si besoin, et le signale."""
+        requested = (
+            SearchFilters(
+                doc_name=doc_name,
+                ticker=ticker.upper() if ticker else None,
+                fiscal_year=fiscal_year,
+            )
+            if doc_name or ticker or fiscal_year
+            else None
+        )
+        outcome = search_with_fallback(self._retriever, query, k, requested)
+        return SearchFilingsResult(
+            passages=[to_passage(r) for r in outcome.results],
+            requested_filters=requested.as_dict() if requested else {},
+            applied_filters=outcome.applied.as_dict() if outcome.applied else {},
+        )

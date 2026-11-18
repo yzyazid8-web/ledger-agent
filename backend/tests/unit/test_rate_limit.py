@@ -1,4 +1,4 @@
-from ledger_agent.llm.rate_limit import TokenRateLimiter
+from ledger_agent.common.rate_limit import TokenRateLimiter
 
 
 class FakeClock:

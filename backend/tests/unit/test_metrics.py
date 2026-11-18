@@ -1,9 +1,8 @@
 import pytest
 
+from ledger_agent.answer_format import extract_final_answer, is_abstention
 from ledger_agent.evaluation.metrics import (
     citation_precision,
-    extract_final_answer,
-    is_abstention,
     is_numeric_answer,
     numeric_correct,
     page_hit,
@@ -34,8 +33,13 @@ def test_numeric_answer_detection(answer: str, expected: bool) -> None:
         ("$1577.00", "Final answer: $1.577 billion"),
         ("14.9%", "Final answer: 14.86%"),
         ("24.26", "Final answer: 24.3"),
-        ("-0.02", "Final answer: a decrease of 0.02"),
         ("0.66", "Final answer: 0.6612"),
+        # Une référence négative accepte un signe moins, des parenthèses ou un mot de baisse
+        ("-0.02", "Final answer: -0.02"),
+        ("-0.02", "Final answer: (0.02)"),
+        ("-4.1%", "Final answer: a decline of 4.1%"),
+        # Une référence positive accepte une formulation en baisse (« de combien a-t-il baissé »)
+        ("1.9%", "Final answer: margin decreased by 1.9%"),
     ],
 )
 def test_numeric_matches(gold: str, prediction: str) -> None:
@@ -49,21 +53,39 @@ def test_numeric_matches(gold: str, prediction: str) -> None:
         ("14.9%", "Final answer: 16.2%"),
         # Le bon chiffre n'apparaît que dans le raisonnement, pas dans la réponse finale
         ("$1577.00", "In 2018 capex was 1,577 but in 2017 it was 1,373.\nFinal answer: $1,373"),
+        # Signe inversé : une hausse ne répond pas à une baisse
+        ("-4.1%", "Final answer: an increase of 4.1%"),
+        # « 3M » est une entreprise, « FY2018 » une année : ni 3 ni 2018
+        ("3", "Final answer: 3M did not disclose it"),
+        ("2018", "Final answer: see FY2018"),
+        # Un ratio de 1.5 ne vaut pas 1.5 milliard
+        ("1.5", "Final answer: 1.5 billion"),
     ],
 )
 def test_numeric_mismatches(gold: str, prediction: str) -> None:
     assert not numeric_correct(gold, prediction)
 
 
-def test_final_answer_falls_back_to_whole_text() -> None:
+def test_final_answer_takes_the_last_one_and_ignores_markdown() -> None:
     assert extract_final_answer("just 42") == "just 42"
     assert extract_final_answer("a\nFinal answer: 1\nFinal Answer: 2") == "2"
+    assert extract_final_answer("**Final answer:** Yes") == "Yes"
 
 
 def test_abstention_detection() -> None:
     assert is_abstention("INSUFFICIENT_CONTEXT")
-    assert is_abstention("The passages do not contain the 2019 figure.")
+    assert is_abstention("Final answer: The information cannot be determined.")
     assert not is_abstention("Final answer: $1,577 million")
+
+
+def test_real_answer_mentioning_missing_context_is_not_an_abstention() -> None:
+    # Cas réel (financebench_id_01107) : une vraie réponse, compté à tort comme abstention
+    text = (
+        "**Final answer:** CVS Health reported a materially important ongoing legal battle "
+        "in 2022 (opioid litigation charges), but the context does not show any such "
+        "disclosures for 2021 or 2020."
+    )
+    assert not is_abstention(text)
 
 
 def test_page_hit_and_citation_precision() -> None:

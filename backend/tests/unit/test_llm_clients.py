@@ -5,7 +5,8 @@ import httpx
 import pytest
 
 from ledger_agent.llm.cache import CachedLLM
-from ledger_agent.llm.gemini import GeminiClient
+from ledger_agent.llm.gemini import GeminiClient, parse_response
+from ledger_agent.llm.http_errors import daily_quota_wait, sanitize
 from ledger_agent.llm.openai_compatible import OpenAICompatibleClient
 from ledger_agent.llm.types import CompletionParams, LLMError, LLMQuotaError, LLMResponse, Message
 
@@ -138,3 +139,51 @@ def test_cache_avoids_paying_twice(tmp_path: Path) -> None:
     assert (first.text, first.cached) == ("answer 1", False)
     assert (second.text, second.cached) == ("answer 1", True)
     assert other.text == "answer 2"
+
+
+GROQ_TPD_BODY = (
+    '{"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization '
+    "`org_01ksyp3jn6erbajmettfn0ex6h` service tier `on_demand` on tokens per day (TPD): "
+    'Limit 200000, Used 199063, Requested 2840. Please try again in 13m42.09s."}}'
+)
+
+
+def test_daily_quota_detected_from_body_without_retry_after() -> None:
+    sleeps: list[float] = []
+    client = OpenAICompatibleClient(
+        "key",
+        "m",
+        tokens_per_minute=None,
+        transport=httpx.MockTransport(lambda _: httpx.Response(429, text=GROQ_TPD_BODY)),
+        sleep=sleeps.append,
+    )
+
+    with pytest.raises(LLMQuotaError) as error:
+        client.complete(MESSAGES, CompletionParams())
+
+    assert error.value.retry_after_s == pytest.approx(13 * 60 + 42.09)
+    assert sleeps == []
+
+
+def test_minute_rate_limit_is_not_a_daily_quota() -> None:
+    assert daily_quota_wait("Rate limit reached on tokens per minute (TPM)", "2") is None
+
+
+def test_error_messages_hide_account_identifiers() -> None:
+    cleaned = sanitize(GROQ_TPD_BODY)
+
+    assert "01ksyp3jn6erbajmettfn0ex6h" not in cleaned
+    assert "masqué" in cleaned
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"promptFeedback": {"blockReason": "SAFETY"}},
+        {"candidates": [{"finishReason": "MAX_TOKENS", "content": {"parts": [{"text": "{"}]}}]},
+        {"candidates": [{"finishReason": "STOP", "content": {"parts": []}}]},
+    ],
+)
+def test_blocked_or_truncated_gemini_answers_raise_llm_error(payload: dict[str, object]) -> None:
+    with pytest.raises(LLMError):
+        parse_response(payload, "gemini", 0.1)

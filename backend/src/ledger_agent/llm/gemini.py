@@ -7,14 +7,40 @@ from typing import Any
 
 import httpx
 
-from ledger_agent.ingestion.edgar_client import RateLimiter
-from ledger_agent.llm.types import CompletionParams, LLMError, LLMResponse, Message
+from ledger_agent.common.rate_limit import RateLimiter
+from ledger_agent.llm.http_errors import daily_quota_wait, parse_seconds, sanitize
+from ledger_agent.llm.types import CompletionParams, LLMError, LLMQuotaError, LLMResponse, Message
 
 logger = logging.getLogger(__name__)
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_JUDGE_MODEL = "gemini-3.5-flash-lite"
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+MAX_BACKOFF_SECONDS = 60.0
+
+
+def parse_response(payload: dict[str, Any], model: str, latency: float) -> LLMResponse:
+    """Extrait le texte, ou lève LLMError si la réponse est bloquée ou tronquée."""
+    candidates = payload.get("candidates") or []
+    if not candidates:
+        # Réponse bloquée par un filtre de sécurité, ou vide
+        reason = payload.get("promptFeedback", {}).get("blockReason", "aucun candidat")
+        raise LLMError(f"Réponse Gemini bloquée : {reason}")
+    candidate = candidates[0]
+    finish = candidate.get("finishReason", "")
+    parts = candidate.get("content", {}).get("parts", [])
+    text = "".join(p.get("text", "") for p in parts).strip()
+    if finish not in ("", "STOP") or not text:
+        raise LLMError(f"Réponse Gemini incomplète : finishReason={finish or 'vide'}")
+    usage = payload.get("usageMetadata", {})
+    return LLMResponse(
+        text=text,
+        model=model,
+        prompt_tokens=int(usage.get("promptTokenCount", 0)),
+        completion_tokens=int(usage.get("candidatesTokenCount", 0)),
+        latency_s=latency,
+        extra={"finish_reason": finish},
+    )
 
 
 class GeminiClient:
@@ -30,7 +56,7 @@ class GeminiClient:
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         if not api_key:
-            raise ValueError("Missing GEMINI_API_KEY")
+            raise ValueError("GEMINI_API_KEY manquante")
         self._model = model
         self._max_retries = max_retries
         self._sleep = sleep
@@ -75,19 +101,28 @@ class GeminiClient:
         body = self._body(messages, params)
         url = f"/models/{self._model}:generateContent"
         for attempt in range(self._max_retries + 1):
+            is_last_attempt = attempt == self._max_retries
             self._limiter.wait()
             started = time.perf_counter()
             try:
                 response = self._client.post(url, json=body)
             except httpx.TransportError as exc:
-                if attempt == self._max_retries:
-                    raise LLMError(f"Network error: {exc}") from exc
+                if is_last_attempt:
+                    raise LLMError(f"Erreur réseau : {exc}") from exc
                 self._sleep(2.0 ** (attempt + 1))
                 continue
-            if response.status_code in RETRYABLE_STATUS and attempt < self._max_retries:
-                delay = min(2.0 ** (attempt + 2), 60.0)
+
+            retry_after = response.headers.get("retry-after")
+            if response.status_code == 429 and (
+                wait := daily_quota_wait(response.text, retry_after)
+            ):
+                raise LLMQuotaError(f"Quota Gemini épuisé ({self._model})", retry_after_s=wait)
+            if response.status_code in RETRYABLE_STATUS and not is_last_attempt:
+                delay = min(2.0 ** (attempt + 2), MAX_BACKOFF_SECONDS)
+                if (seconds := parse_seconds(retry_after)) is not None:
+                    delay = min(seconds + 0.5, MAX_BACKOFF_SECONDS)
                 logger.warning(
-                    "Gemini retry %d after %d, waiting %.0fs",
+                    "Gemini : essai %d après %d, attente %.0f s",
                     attempt + 1,
                     response.status_code,
                     delay,
@@ -95,16 +130,11 @@ class GeminiClient:
                 self._sleep(delay)
                 continue
             if response.is_error:
-                raise LLMError(f"HTTP {response.status_code}: {response.text[:300]}")
+                raise LLMError(f"HTTP {response.status_code} : {sanitize(response.text)}")
 
-            payload = response.json()
-            parts = payload["candidates"][0].get("content", {}).get("parts", [])
-            usage = payload.get("usageMetadata", {})
-            return LLMResponse(
-                text="".join(p.get("text", "") for p in parts).strip(),
-                model=self._model,
-                prompt_tokens=int(usage.get("promptTokenCount", 0)),
-                completion_tokens=int(usage.get("candidatesTokenCount", 0)),
-                latency_s=time.perf_counter() - started,
-            )
-        raise LLMError("Giving up after retries")  # pragma: no cover
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise LLMError(f"Réponse non JSON : {sanitize(response.text)}") from exc
+            return parse_response(payload, self._model, time.perf_counter() - started)
+        raise LLMError("Abandon après toutes les relances")  # pragma: no cover

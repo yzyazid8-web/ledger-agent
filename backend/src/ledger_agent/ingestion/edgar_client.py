@@ -3,7 +3,6 @@
 import contextlib
 import json
 import logging
-import threading
 import time
 from collections.abc import Callable
 from types import TracebackType
@@ -11,6 +10,7 @@ from typing import Any, Self
 
 import httpx
 
+from ledger_agent.common.rate_limit import RateLimiter
 from ledger_agent.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -28,32 +28,6 @@ class EdgarError(RuntimeError):
     """Levée quand EDGAR est injoignable ou refuse la requête."""
 
 
-class RateLimiter:
-    """Espace les appels pour ne jamais dépasser `max_per_second` appels par seconde."""
-
-    def __init__(
-        self,
-        max_per_second: float,
-        clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
-    ) -> None:
-        if max_per_second <= 0:
-            raise ValueError("max_per_second must be positive")
-        self._interval = 1.0 / max_per_second
-        self._clock = clock
-        self._sleep = sleep
-        self._next_slot = 0.0
-        self._lock = threading.Lock()
-
-    def wait(self) -> None:
-        with self._lock:
-            now = self._clock()
-            if now < self._next_slot:
-                self._sleep(self._next_slot - now)
-                now = self._next_slot
-            self._next_slot = now + self._interval
-
-
 class EdgarClient:
     def __init__(
         self,
@@ -67,7 +41,7 @@ class EdgarClient:
     ) -> None:
         if "@" not in user_agent:
             raise ValueError(
-                "SEC_USER_AGENT must contain a contact email, e.g. 'my-app me@example.com'"
+                "SEC_USER_AGENT doit contenir un e-mail de contact, ex. 'mon-app moi@exemple.com'"
             )
         self._max_retries = max_retries
         self._sleep = sleep
@@ -109,7 +83,7 @@ class EdgarClient:
                 response = self._client.get(url)
             except httpx.TransportError as exc:
                 if is_last_attempt:
-                    raise EdgarError(f"Network error on {url}: {exc}") from exc
+                    raise EdgarError(f"Erreur réseau sur {url} : {exc}") from exc
                 self._backoff(attempt, None, reason=type(exc).__name__)
                 continue
 
@@ -119,17 +93,17 @@ class EdgarClient:
                 )
                 continue
             if response.status_code == 403:
-                raise EdgarError(f"403 Forbidden on {url}: check that SEC_USER_AGENT is set")
+                raise EdgarError(f"403 refusé sur {url} : vérifie que SEC_USER_AGENT est renseigné")
             if response.is_error:
-                raise EdgarError(f"HTTP {response.status_code} on {url}")
+                raise EdgarError(f"HTTP {response.status_code} sur {url}")
             return response.content
 
-        raise EdgarError(f"Giving up on {url}")  # pragma: no cover
+        raise EdgarError(f"Abandon après plusieurs essais sur {url}")  # pragma: no cover
 
     def get_json(self, url: str) -> dict[str, Any]:
         payload = json.loads(self.get_bytes(url))
         if not isinstance(payload, dict):
-            raise EdgarError(f"Expected a JSON object from {url}")
+            raise EdgarError(f"Objet JSON attendu depuis {url}")
         return payload
 
     # Points d'accès EDGAR
@@ -156,5 +130,5 @@ class EdgarClient:
         if retry_after is not None:
             with contextlib.suppress(ValueError):
                 delay = min(float(retry_after), MAX_BACKOFF_SECONDS)
-        logger.warning("EDGAR retry %d after %s, waiting %.1fs", attempt + 1, reason, delay)
+        logger.warning("EDGAR : essai %d après %s, attente %.1f s", attempt + 1, reason, delay)
         self._sleep(delay)

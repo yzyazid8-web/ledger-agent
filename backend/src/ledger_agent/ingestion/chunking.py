@@ -69,7 +69,7 @@ def make_header(document: FinanceBenchDocument, page_index: int) -> str:
 def split_text(text: str, max_chars: int, overlap_chars: int) -> list[str]:
     """Découpe sur les fins de ligne, avec un recouvrement des dernières lignes."""
     if overlap_chars >= max_chars:
-        raise ValueError("overlap_chars must be smaller than max_chars")
+        raise ValueError("overlap_chars doit être inférieur à max_chars")
     if len(text) <= max_chars:
         return [text]
 
