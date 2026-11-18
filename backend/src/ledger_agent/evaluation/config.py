@@ -5,7 +5,7 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ledger_agent.config import REPO_ROOT
 from ledger_agent.llm.types import CompletionParams
@@ -52,16 +52,37 @@ class RetrievalConfig(_Strict):
     reranker: str | None = None
 
 
+class AgentSettings(_Strict):
+    # Petit modèle pour planifier et juger la suffisance (quota Groq séparé du gros modèle)
+    planner_llm: LLMConfig
+    use_xbrl: bool = True
+    use_grader: bool = True
+    use_verifier: bool = True
+    max_search_rounds: int = Field(default=2, ge=1, le=4)
+    passages_per_query: int = Field(default=3, ge=1, le=10)
+    max_passages: int = Field(default=8, ge=1, le=20)
+    max_synthesis_attempts: int = Field(default=2, ge=1, le=3)
+
+
 class RunConfig(_Strict):
     name: str = Field(pattern=r"^[a-z0-9_]+$")
-    pipeline: Literal["naive_rag"]
+    pipeline: Literal["naive_rag", "agent"]
     retrieval: RetrievalConfig = RetrievalConfig()
+    # Pour l'agent, `llm` est le modèle qui rédige la réponse finale
     llm: LLMConfig
     judge: JudgeConfig
+    agent: AgentSettings | None = None
+
+    @model_validator(mode="after")
+    def _agent_needs_settings(self) -> "RunConfig":
+        if self.pipeline == "agent" and self.agent is None:
+            raise ValueError("une configuration « agent » exige une section [agent]")
+        return self
 
     def generation_fingerprint(self, *parts: str) -> str:
         """Empreinte de tout ce qui influence les réponses (le juge n'en fait pas partie)."""
-        raw = self.model_dump_json(include={"pipeline", "retrieval", "llm"}) + "".join(parts)
+        fields = {"pipeline", "retrieval", "llm", "agent"}
+        raw = self.model_dump_json(include=fields) + "".join(parts)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 

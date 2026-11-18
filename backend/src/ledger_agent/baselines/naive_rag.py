@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from ledger_agent.answer_format import ABSTAIN_MARKER, is_abstention
 from ledger_agent.llm.types import CompletionParams, LLMClient, LLMResponse, Message
+from ledger_agent.pipeline import PipelineAnswer, RetrievedPage
 from ledger_agent.retrieval.types import (
     ReportingRetriever,
     RetrievedChunk,
@@ -92,4 +93,19 @@ class NaiveRAG:
             llm=response,
             search=outcome,
             retrieval_s=retrieval_s,
+        )
+
+    def run(self, question: str) -> PipelineAnswer:
+        answer = self.answer(question)
+        return PipelineAnswer(
+            text=answer.text,
+            abstained=answer.abstained,
+            retrieved=[
+                RetrievedPage(r.chunk.chunk_id, r.chunk.doc_name, r.chunk.page_index, r.score)
+                for r in answer.retrieved
+            ],
+            cited=[(c.chunk.doc_name, c.chunk.page_index) for c in answer.cited],
+            llm_calls=[answer.llm],
+            retrieval_s=answer.retrieval_s,
+            search=answer.search,
         )

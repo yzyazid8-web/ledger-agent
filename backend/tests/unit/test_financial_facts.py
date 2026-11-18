@@ -98,3 +98,40 @@ def test_ticker_and_period_are_normalised_and_validated(store: FactStore) -> Non
     assert fact is not None and fact.value == 1577e6
     with pytest.raises(ValueError, match="Période inconnue"):
         store.get_fact("MMM", "PaymentsToAcquirePropertyPlantAndEquipment", 2018, "H1")
+
+
+def test_plural_and_punctuation_still_hit_the_synonyms(store: FactStore) -> None:
+    matches = store.search_concepts("Purchases of property, plant and equipment", "MMM")
+
+    assert matches[0].concept == "PaymentsToAcquirePropertyPlantAndEquipment"
+    assert store.search_concepts("Capital expenditures", "MMM")[0].concept == (
+        "PaymentsToAcquirePropertyPlantAndEquipment"
+    )
+
+
+def test_weak_word_overlap_does_not_propose_an_unrelated_concept() -> None:
+    payload: dict[str, Any] = {
+        "cik": 1,
+        "facts": {
+            "us-gaap": {
+                "AdjustmentsToAdditionalPaidInCapitalSharebasedCompensation": {
+                    "label": "Adjustments to Additional Paid in Capital",
+                    "units": {"USD": [annual("2018-01-01", "2018-12-31", 5.0, FY18, 2018, "2019")]},
+                }
+            }
+        },
+    }
+    con = duckdb.connect(":memory:")
+    init_schema(con)
+    upsert_company(con, 1, *parse_company_facts(payload, "MMM"))
+    build_derived_tables(con)
+
+    # « capital » seul ne suffit pas : mieux vaut aucun fait qu'un fait faux
+    assert FactStore(con).search_concepts("capital expenditures", "MMM") == []
+
+
+def test_fact_carries_the_official_label(store: FactStore) -> None:
+    fact = store.get_fact("MMM", "PaymentsToAcquirePropertyPlantAndEquipment", 2018)
+
+    assert fact is not None
+    assert fact.label == "Payments to Acquire Property, Plant, and Equipment"

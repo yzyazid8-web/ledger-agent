@@ -6,7 +6,10 @@ from contextlib import ExitStack, contextmanager
 
 from qdrant_client import QdrantClient
 
-from ledger_agent.baselines.naive_rag import NaiveRAG
+from ledger_agent.agent.graph import FinancialAgent
+from ledger_agent.agent.nodes import AgentConfig, AgentRuntime
+from ledger_agent.agent.prompts import prompts_sha
+from ledger_agent.baselines.naive_rag import PROMPT_SHA, NaiveRAG
 from ledger_agent.config import Settings
 from ledger_agent.evaluation.config import JudgeConfig, LLMConfig, RetrievalConfig, RunConfig
 from ledger_agent.evaluation.judge import LLMJudge
@@ -15,12 +18,15 @@ from ledger_agent.llm.cache import CachedLLM
 from ledger_agent.llm.gemini import GeminiClient
 from ledger_agent.llm.openai_compatible import OpenAICompatibleClient
 from ledger_agent.llm.types import LLMClient
+from ledger_agent.pipeline import Pipeline
 from ledger_agent.retrieval.dense import DenseRetriever
 from ledger_agent.retrieval.hybrid import AutoFilterRetriever, HybridRetriever
 from ledger_agent.retrieval.lexical import LexicalRetriever
 from ledger_agent.retrieval.reranker import CrossEncoderReranker
 from ledger_agent.retrieval.store import ChunkStore
 from ledger_agent.retrieval.types import Retriever
+from ledger_agent.tools.financial_facts import FactStore
+from ledger_agent.tools.search_filings import SearchFilingsTool
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +81,46 @@ def build_retriever(config: RetrievalConfig, settings: Settings, stack: ExitStac
     return retriever
 
 
+def pipeline_prompt_sha(config: RunConfig) -> str:
+    return prompts_sha() if config.pipeline == "agent" else PROMPT_SHA
+
+
+def build_agent(
+    config: RunConfig, settings: Settings, retriever: Retriever, stack: ExitStack
+) -> FinancialAgent:
+    agent = config.agent
+    if agent is None:
+        raise ValueError("section [agent] manquante")
+    facts = None
+    if agent.use_xbrl:
+        facts = FactStore.open(settings.data_dir / "processed" / "facts.duckdb")
+        stack.callback(facts.close)
+    runtime = AgentRuntime(
+        planner_llm=build_llm(agent.planner_llm, settings, stack),
+        writer_llm=build_llm(config.llm, settings, stack),
+        search=SearchFilingsTool(retriever),
+        facts=facts,
+        config=AgentConfig(
+            use_xbrl=agent.use_xbrl,
+            use_grader=agent.use_grader,
+            use_verifier=agent.use_verifier,
+            max_search_rounds=agent.max_search_rounds,
+            passages_per_query=agent.passages_per_query,
+            max_passages=agent.max_passages,
+            max_synthesis_attempts=agent.max_synthesis_attempts,
+        ),
+        planner_params=agent.planner_llm.params(),
+        writer_params=config.llm.params(),
+    )
+    return FinancialAgent(runtime)
+
+
 @contextmanager
-def build_pipeline(config: RunConfig, settings: Settings) -> Iterator[NaiveRAG]:
+def build_pipeline(config: RunConfig, settings: Settings) -> Iterator[Pipeline]:
     with ExitStack() as stack:
         retriever = build_retriever(config.retrieval, settings, stack)
+        if config.pipeline == "agent":
+            yield build_agent(config, settings, retriever, stack)
+            return
         llm = build_llm(config.llm, settings, stack)
         yield NaiveRAG(retriever, llm, top_k=config.retrieval.top_k, params=config.llm.params())

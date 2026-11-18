@@ -8,13 +8,13 @@ from typing import Any
 
 import pytest
 
-from ledger_agent.baselines.naive_rag import RAGAnswer
 from ledger_agent.config import Settings
 from ledger_agent.evaluation import compare, predict, runs, scoring
 from ledger_agent.evaluation.config import RunConfig
 from ledger_agent.evaluation.dataset import EvidencePage, Question
 from ledger_agent.evaluation.judge import Verdict
 from ledger_agent.llm.types import LLMError, LLMQuotaError, LLMResponse
+from ledger_agent.pipeline import PipelineAnswer
 from ledger_agent.retrieval.types import SearchOutcome
 
 QUESTIONS = [
@@ -49,7 +49,7 @@ class FakePipeline:
         self.fail_ids, self.quota_ids, self.wrong_ids = fail_ids, quota_ids, wrong_ids
         self.calls: list[str] = []
 
-    def answer(self, question: str) -> RAGAnswer:
+    def run(self, question: str) -> PipelineAnswer:
         qid = "q" + question.split()[-1].rstrip("?")
         self.calls.append(qid)
         if qid in self.quota_ids:
@@ -57,14 +57,14 @@ class FakePipeline:
         if qid in self.fail_ids:
             raise LLMError("HTTP 500")
         value = 999 if qid in self.wrong_ids else int(qid[1:]) * 100
-        return RAGAnswer(
+        return PipelineAnswer(
             text=f"Final answer: ${value} million",
+            abstained=False,
             retrieved=[],
             cited=[],
-            abstained=False,
-            llm=LLMResponse(text="", model="m", prompt_tokens=10, completion_tokens=5),
-            search=SearchOutcome(results=[], requested=None, applied=None),
+            llm_calls=[LLMResponse(text="", model="m", prompt_tokens=10, completion_tokens=5)],
             retrieval_s=0.1,
+            search=SearchOutcome(results=[], requested=None, applied=None),
         )
 
 

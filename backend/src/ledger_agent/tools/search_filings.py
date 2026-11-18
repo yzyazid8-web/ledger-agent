@@ -14,6 +14,7 @@ class Passage:
     header: str
     text: str
     score: float
+    chunk_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,7 @@ def to_passage(item: RetrievedChunk) -> Passage:
         header=chunk.header,
         text=chunk.text,
         score=item.score,
+        chunk_id=chunk.chunk_id,
     )
 
 

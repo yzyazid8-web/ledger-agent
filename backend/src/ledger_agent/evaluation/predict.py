@@ -6,9 +6,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ledger_agent.baselines.naive_rag import RAGAnswer
 from ledger_agent.config import get_settings
-from ledger_agent.evaluation.components import build_pipeline
+from ledger_agent.evaluation.components import build_pipeline, pipeline_prompt_sha
 from ledger_agent.evaluation.config import EVAL_DIR, RunConfig
 from ledger_agent.evaluation.dataset import (
     Question,
@@ -20,6 +19,7 @@ from ledger_agent.evaluation.dataset import (
 from ledger_agent.evaluation.runs import PREDICTIONS_FILE, latest_records, prepare_run
 from ledger_agent.ingestion.financebench import load_questions
 from ledger_agent.llm.types import LLMError, LLMQuotaError
+from ledger_agent.pipeline import PipelineAnswer
 
 logger = logging.getLogger(__name__)
 
@@ -43,38 +43,40 @@ def _base_record(question: Question) -> dict[str, Any]:
     }
 
 
-def prediction_record(question: Question, answer: RAGAnswer, total_s: float) -> dict[str, Any]:
+def prediction_record(question: Question, answer: PipelineAnswer, total_s: float) -> dict[str, Any]:
     search = answer.search
     return {
         **_base_record(question),
         "prediction": answer.text,
         "retrieved": [
             {
-                "chunk_id": r.chunk.chunk_id,
-                "doc_name": r.chunk.doc_name,
-                "page_index": r.chunk.page_index,
+                "chunk_id": r.chunk_id,
+                "doc_name": r.doc_name,
+                "page_index": r.page_index,
                 "score": round(r.score, 4),
             }
             for r in answer.retrieved
         ],
-        "cited": [[c.chunk.doc_name, c.chunk.page_index] for c in answer.cited],
+        "cited": [list(page) for page in answer.cited],
         "search": {
-            "requested": search.requested.as_dict() if search.requested else None,
-            "applied": search.applied.as_dict() if search.applied else None,
-            "relaxed": search.relaxed,
+            "requested": search.requested.as_dict() if search and search.requested else None,
+            "applied": search.applied.as_dict() if search and search.applied else None,
+            "relaxed": search.relaxed if search else False,
         },
         "llm": {
-            "model": answer.llm.model,
-            "prompt_tokens": answer.llm.prompt_tokens,
-            "completion_tokens": answer.llm.completion_tokens,
-            "cached": answer.llm.cached,
+            "models": sorted({c.model for c in answer.llm_calls}),
+            "calls": len(answer.llm_calls),
+            "prompt_tokens": answer.prompt_tokens,
+            "completion_tokens": answer.completion_tokens,
+            "cached": answer.all_cached,
         },
-        # Latence de bout en bout : recherche comprise, pas seulement l'appel au LLM
+        # Latence de bout en bout : recherche comprise, pas seulement les appels au LLM
         "timing": {
             "retrieval_s": round(answer.retrieval_s, 3),
-            "llm_s": round(answer.llm.latency_s, 3),
+            "llm_s": round(answer.llm_s, 3),
             "total_s": round(total_s, 3),
         },
+        "trace": answer.trace,
     }
 
 
@@ -84,7 +86,14 @@ def run_predictions(config: RunConfig, split: Split, limit: int | None = None) -
     full = load_split_questions(split)
     selected = full[:limit] if limit is not None else full
     # L'empreinte porte sur le jeu complet : un essai avec --limit peut être prolongé ensuite
-    run_dir = prepare_run(config, split, [q.id for q in full], settings, expected=len(selected))
+    run_dir = prepare_run(
+        config,
+        split,
+        [q.id for q in full],
+        settings,
+        expected=len(selected),
+        prompt_sha=pipeline_prompt_sha(config),
+    )
     predictions_path = run_dir / PREDICTIONS_FILE
 
     # Les questions en erreur lors d'une session précédente sont retentées
@@ -99,7 +108,7 @@ def run_predictions(config: RunConfig, split: Split, limit: int | None = None) -
         for i, question in enumerate(todo, start=1):
             started = time.perf_counter()
             try:
-                answer = pipeline.answer(question.question)
+                answer = pipeline.run(question.question)
             except LLMQuotaError as exc:
                 logger.warning(
                     "Arrêt : %s. Relance la même commande plus tard pour reprendre.", exc
@@ -117,8 +126,8 @@ def run_predictions(config: RunConfig, split: Split, limit: int | None = None) -
                     len(todo),
                     question.id,
                     "ABSTENTION" if answer.abstained else "ok",
-                    answer.llm.total_tokens,
-                    " (cache)" if answer.llm.cached else "",
+                    answer.prompt_tokens + answer.completion_tokens,
+                    " (cache)" if answer.all_cached else "",
                 )
             out.write(json.dumps(record, ensure_ascii=False) + "\n")
             out.flush()

@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ledger_agent.baselines.naive_rag import PROMPT_SHA
 from ledger_agent.config import REPO_ROOT, Settings
 from ledger_agent.evaluation.config import EVAL_DIR, RunConfig
 from ledger_agent.evaluation.dataset import Split
@@ -76,13 +75,18 @@ def git_state() -> dict[str, Any]:
 
 
 def prepare_run(
-    config: RunConfig, split: Split, question_ids: list[str], settings: Settings, expected: int
+    config: RunConfig,
+    split: Split,
+    question_ids: list[str],
+    settings: Settings,
+    expected: int,
+    prompt_sha: str,
 ) -> Path:
     """Crée ou reprend un dossier d'exécution, en refusant toute reprise incohérente."""
     run_dir = run_dir_for(config.name, split)
     corpus_sha = corpus_fingerprint(settings)
     split_sha = _sha(sorted(question_ids))
-    fingerprint = config.generation_fingerprint(PROMPT_SHA, corpus_sha, split_sha)
+    fingerprint = config.generation_fingerprint(prompt_sha, corpus_sha, split_sha)
     now = datetime.now(UTC).isoformat(timespec="seconds")
     run_file = run_dir / RUN_FILE
 
@@ -102,7 +106,7 @@ def prepare_run(
             "created_at": now,
             "config": config.model_dump(),
             "generation_fingerprint": fingerprint,
-            "prompt_sha": PROMPT_SHA,
+            "prompt_sha": prompt_sha,
             "corpus_sha": corpus_sha,
             "split_sha": split_sha,
             "git": [],
