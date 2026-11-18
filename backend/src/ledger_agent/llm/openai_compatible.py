@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from ledger_agent.llm.rate_limit import TokenRateLimiter
-from ledger_agent.llm.types import CompletionParams, LLMError, LLMResponse, Message
+from ledger_agent.llm.types import CompletionParams, LLMError, LLMQuotaError, LLMResponse, Message
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,13 @@ RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 MAX_BACKOFF_SECONDS = 60.0
 # Approximation classique pour l'anglais : 1 token ≈ 4 caractères
 CHARS_PER_TOKEN = 4
+
+
+def _retry_after_seconds(header: str | None) -> float | None:
+    try:
+        return float(header) if header else None
+    except ValueError:
+        return None
 
 
 def estimate_tokens(messages: list[Message], max_tokens: int) -> int:
@@ -93,6 +100,13 @@ class OpenAICompatibleClient:
                 continue
             latency = time.perf_counter() - started
 
+            # Quota quotidien épuisé : attendre des minutes ne sert à rien, on s'arrête net
+            wait = _retry_after_seconds(response.headers.get("retry-after"))
+            if response.status_code == 429 and wait is not None and wait > MAX_BACKOFF_SECONDS:
+                raise LLMQuotaError(
+                    f"Quota exhausted for {self._model}, retry in {wait / 60:.0f} min",
+                    retry_after_s=wait,
+                )
             if response.status_code in RETRYABLE_STATUS and not is_last_attempt:
                 self._backoff(
                     attempt, response.headers.get("retry-after"), str(response.status_code)

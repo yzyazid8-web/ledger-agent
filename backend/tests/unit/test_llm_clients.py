@@ -7,7 +7,7 @@ import pytest
 from ledger_agent.llm.cache import CachedLLM
 from ledger_agent.llm.gemini import GeminiClient
 from ledger_agent.llm.openai_compatible import OpenAICompatibleClient
-from ledger_agent.llm.types import CompletionParams, LLMError, LLMResponse, Message
+from ledger_agent.llm.types import CompletionParams, LLMError, LLMQuotaError, LLMResponse, Message
 
 MESSAGES: list[Message] = [
     {"role": "system", "content": "Be brief."},
@@ -55,6 +55,25 @@ def test_openai_compatible_retries_on_429() -> None:
 
     assert client.complete(MESSAGES, CompletionParams()).text == "4"
     assert sleeps == [3.5]
+
+
+def test_daily_quota_stops_immediately_without_retrying() -> None:
+    sleeps: list[float] = []
+    client = OpenAICompatibleClient(
+        "key",
+        "m",
+        tokens_per_minute=None,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(429, headers={"retry-after": "822"}, text="TPD")
+        ),
+        sleep=sleeps.append,
+    )
+
+    with pytest.raises(LLMQuotaError, match="14 min") as error:
+        client.complete(MESSAGES, CompletionParams())
+
+    assert error.value.retry_after_s == 822
+    assert sleeps == []
 
 
 def test_openai_compatible_raises_on_client_error() -> None:

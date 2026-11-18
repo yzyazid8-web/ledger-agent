@@ -11,16 +11,19 @@ cik = 66740
 
 [[companies]]
 name = "AES Corporation"
+aliases = ["AES Corp"]
 ticker = "AES"
 cik = 874761
 
 [[companies]]
 name = "AMD"
+aliases = ["Advanced Micro Devices"]
 ticker = "AMD"
 cik = 2488
 
 [[companies]]
 name = "Activision Blizzard"
+aliases = ["Activision"]
 ticker = "ATVI"
 cik = 718877
 
@@ -36,16 +39,19 @@ cik = 1018724
 
 [[companies]]
 name = "Amcor"
+aliases = ["AMCOR plc"]
 ticker = "AMCR"
 cik = 1748790
 
 [[companies]]
 name = "American Express"
+aliases = ["AmEx", "Amex"]
 ticker = "AXP"
 cik = 4962
 
 [[companies]]
 name = "American Water Works"
+aliases = ["American Water"]
 ticker = "AWK"
 cik = 1410636
 
@@ -56,6 +62,7 @@ cik = 764478
 
 [[companies]]
 name = "Block"
+aliases = ["Block Inc", "Square"]
 ticker = "XYZ"
 cik = 1512673
 
@@ -66,11 +73,13 @@ cik = 12927
 
 [[companies]]
 name = "CVS Health"
+aliases = ["CVS"]
 ticker = "CVS"
 cik = 64803
 
 [[companies]]
 name = "Coca-Cola"
+aliases = ["Coca Cola", "CocaCola", "The Coca-Cola Company"]
 ticker = "KO"
 cik = 21344
 
@@ -81,6 +90,7 @@ cik = 24741
 
 [[companies]]
 name = "Costco"
+aliases = ["Costco Wholesale"]
 ticker = "COST"
 cik = 909832
 
@@ -96,26 +106,31 @@ cik = 40704
 
 [[companies]]
 name = "JPMorgan"
+aliases = ["JPMorgan Chase", "JP Morgan", "J.P. Morgan"]
 ticker = "JPM"
 cik = 19617
 
 [[companies]]
 name = "Johnson & Johnson"
+aliases = ["J&J", "Johnson and Johnson", "JnJ"]
 ticker = "JNJ"
 cik = 200406
 
 [[companies]]
 name = "Kraft Heinz"
+aliases = ["Kraft-Heinz", "KraftHeinz"]
 ticker = "KHC"
 cik = 1637459
 
 [[companies]]
 name = "Lockheed Martin"
+aliases = ["Lockheed"]
 ticker = "LMT"
 cik = 936468
 
 [[companies]]
 name = "MGM Resorts"
+aliases = ["MGM"]
 ticker = "MGM"
 cik = 789570
 
@@ -136,11 +151,13 @@ cik = 320187
 
 [[companies]]
 name = "Paypal"
+aliases = ["PayPal Holdings"]
 ticker = "PYPL"
 cik = 1633917
 
 [[companies]]
 name = "PepsiCo"
+aliases = ["Pepsi"]
 ticker = "PEP"
 cik = 77476
 
@@ -151,6 +168,7 @@ cik = 78003
 
 [[companies]]
 name = "Ulta Beauty"
+aliases = ["Ulta"]
 ticker = "ULTA"
 cik = 1403568
 
@@ -161,5 +179,6 @@ cik = 732712
 
 [[companies]]
 name = "Walmart"
+aliases = ["Wal-Mart"]
 ticker = "WMT"
 cik = 104169
