@@ -23,4 +23,4 @@ def write_manifest(path: Path, kind: str, entries: list[dict[str, Any]], **extra
         **extra,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=False), encoding="utf-8")
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=False) + "\n", encoding="utf-8")

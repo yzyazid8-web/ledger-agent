@@ -1,0 +1,21 @@
+{
+  "questions": 50,
+  "judged": 50,
+  "unjudged": 0,
+  "accuracy": 0.42,
+  "accuracy_numeric": 0.4118,
+  "accuracy_text": 0.4242,
+  "accuracy_by_type": {
+    "domain-relevant": 0.2941,
+    "metrics-generated": 0.4118,
+    "novel-generated": 0.5625
+  },
+  "abstention_rate": 0.48,
+  "page_hit_rate": 0.36,
+  "citation_precision": 0.3571,
+  "latency_p50_s": 0.77,
+  "latency_p95_s": 1.68,
+  "tokens_mean": 2489,
+  "run": "naive-dev",
+  "judge_model": "gemini-3.5-flash-lite"
+}
