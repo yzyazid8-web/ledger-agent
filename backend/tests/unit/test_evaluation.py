@@ -217,3 +217,13 @@ def test_parse_verdict_handles_markdown_and_garbage() -> None:
     )
     assert parse_verdict("not json").verdict == "invalid"
     assert parse_verdict('{"verdict": "maybe"}').verdict == "invalid"
+
+
+def test_adding_an_optional_section_keeps_existing_fingerprints() -> None:
+    # Régression : ajouter la section [agent] au schéma avait invalidé les exécutions en cours
+    import hashlib
+
+    config = make_config()
+    legacy = config.model_dump_json(include={"pipeline", "retrieval", "llm"}) + "p"
+
+    assert config.generation_fingerprint("p") == hashlib.sha256(legacy.encode()).hexdigest()[:16]

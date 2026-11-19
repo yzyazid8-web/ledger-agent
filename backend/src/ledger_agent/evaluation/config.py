@@ -81,7 +81,8 @@ class RunConfig(_Strict):
 
     def generation_fingerprint(self, *parts: str) -> str:
         """Empreinte de tout ce qui influence les réponses (le juge n'en fait pas partie)."""
-        fields = {"pipeline", "retrieval", "llm", "agent"}
+        # Une section optionnelle absente ne doit pas changer l'empreinte des configs existantes
+        fields = {"pipeline", "retrieval", "llm"} | ({"agent"} if self.agent else set())
         raw = self.model_dump_json(include=fields) + "".join(parts)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
