@@ -303,3 +303,36 @@ def test_invalid_planner_output_falls_back_to_rules() -> None:
 
     # Le ticker et l'exercice viennent alors du repérage par règles
     assert retriever.filters[0] == SearchFilters(ticker="MMM", fiscal_year=2018)
+
+
+def test_a_calculation_can_reuse_an_earlier_result() -> None:
+    # Cas réel : rotation des stocks = coût des ventes / stock moyen, le stock moyen étant calculé
+    evidence = [
+        Evidence("E1", "xbrl", "xbrl:cogs", "t", "", value=16830),
+        Evidence("E2", "xbrl", "xbrl:inv19", "t", "", value=2721),
+        Evidence("E3", "xbrl", "xbrl:inv18", "t", "", value=2667),
+    ]
+    synthesis = Synthesis.model_validate(
+        {
+            "calculations": [
+                {
+                    "name": "avg_inventory",
+                    "expression": "(a + b) / 2",
+                    "inputs": {
+                        "a": {"evidence": "E2", "value": 2721},
+                        "b": {"evidence": "E3", "value": 2667},
+                    },
+                },
+                {
+                    "name": "turnover",
+                    "expression": "cogs / avg_inventory",
+                    "inputs": {"cogs": {"evidence": "E1", "value": 16830}},
+                },
+            ]
+        }
+    )
+
+    results, problems = run_calculations(synthesis, evidence)
+
+    assert problems == []
+    assert round(results["turnover"].value, 2) == 6.25

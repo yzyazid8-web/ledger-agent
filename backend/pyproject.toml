@@ -49,6 +49,7 @@ eval = "python -m ledger_agent.evaluation run"
 eval-score = "python -m ledger_agent.evaluation score"
 eval-retrieval = "python -m ledger_agent.evaluation retrieval"
 eval-compare = "python -m ledger_agent.evaluation compare"
+eval-report = "python -m ledger_agent.evaluation report"
 
 [tool.ruff]
 line-length = 100

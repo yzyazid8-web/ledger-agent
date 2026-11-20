@@ -5,6 +5,7 @@ Utilisation :
     python -m ledger_agent.evaluation score naive --split dev [--no-judge]
     python -m ledger_agent.evaluation retrieval hybrid --split dev
     python -m ledger_agent.evaluation compare naive hybrid --split dev
+    python -m ledger_agent.evaluation report --split dev
 """
 
 import argparse
@@ -17,6 +18,7 @@ from ledger_agent.evaluation.compare import ComparisonError, compare_runs
 from ledger_agent.evaluation.config import load_run_config
 from ledger_agent.evaluation.dataset import SplitError
 from ledger_agent.evaluation.predict import run_predictions
+from ledger_agent.evaluation.report import build_report, report_markdown
 from ledger_agent.evaluation.retrieval_eval import evaluate_retrieval
 from ledger_agent.evaluation.runs import RunMismatchError, run_dir_for
 from ledger_agent.evaluation.scoring import score_run
@@ -44,6 +46,9 @@ def main() -> None:
     compare.add_argument("b", help="Configuration comparée")
     compare.add_argument("--split", choices=["dev", "test"], default="dev")
 
+    report = sub.add_parser("report", help="Tableau d'ablation de toutes les configurations")
+    report.add_argument("--split", choices=["dev", "test"], default="dev")
+
     args = parser.parse_args()
     logging.basicConfig(
         level=get_settings().log_level,
@@ -55,6 +60,10 @@ def main() -> None:
     try:
         if args.command == "compare":
             summary = compare_runs(args.a, args.b, args.split)
+        elif args.command == "report":
+            summary = build_report(args.split)
+            print(report_markdown(summary))
+            return
         else:
             config = load_run_config(args.config)
             if args.command == "retrieval":

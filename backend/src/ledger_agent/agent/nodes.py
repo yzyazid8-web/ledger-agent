@@ -1,4 +1,4 @@
-"""Nœuds du graphe de l'agent : planifier, collecter, juger, synthétiser, vérifier."""
+"""Noeuds du graphe de l'agent : planifier, collecter, juger, synthétiser, vérifier."""
 
 import logging
 import re
@@ -300,7 +300,9 @@ def run_calculations(
     results: dict[str, CalculationResult] = {}
     problems: list[str] = []
     for calc in synthesis.calculations:
-        variables: dict[str, float] = {}
+        # Un calcul peut réutiliser le résultat d'un calcul précédent par son nom
+        # (ex. actif moyen, puis rentabilité des actifs) : la valeur reste traçable
+        variables: dict[str, float] = {name: r.value for name, r in results.items()}
         for name, source in calc.inputs.items():
             item = by_id.get(source.evidence)
             if item is None:
