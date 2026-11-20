@@ -1,6 +1,7 @@
 // Événements diffusés par POST /chat (voir backend/src/ledger_agent/agent/graph.py)
 
-export type NodeName = "plan" | "gather" | "grade" | "synthesize" | "verify";
+// Agent ReAct : « agent » (décision) et « tool » (appel d'outil) ; workflow : les cinq étapes fixes
+export type NodeName = "agent" | "tool" | "plan" | "gather" | "grade" | "synthesize" | "verify";
 
 export interface StepEvent {
   type: "step";

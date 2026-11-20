@@ -1,17 +1,17 @@
-# Agent complet : planification, faits XBRL, recherche hybride filtrée, contrôle de
-# suffisance, calculs exécutés par la calculatrice et vérification des chiffres.
+# Agent ReAct : le LLM choisit ses outils (recherche, faits XBRL, calculatrice), lit leurs
+# résultats et décide de la suite. Chaque chiffre de la réponse est vérifié par des règles.
 
 name = "agent"
 pipeline = "agent"
 
-# L'agent transmet lui-même les filtres (entreprise, exercice) à l'outil de recherche
+# L'agent choisit lui-même les filtres (entreprise, exercice) de chaque recherche
 [retrieval]
 mode = "hybrid"
 filters = "none"
 lexical_weight = 0.5
 candidates = 30
 
-# Modèle qui rédige la réponse finale
+# Modèle qui pilote la boucle : choix des outils, lecture des résultats, réponse
 [llm]
 provider = "groq"
 model = "openai/gpt-oss-120b"
@@ -21,22 +21,12 @@ reasoning_effort = "low"
 tokens_per_minute = 8000
 
 [agent]
+mode = "react"
 use_xbrl = true
-use_grader = true
 use_verifier = true
-max_search_rounds = 2
+max_steps = 8
 passages_per_query = 3
-max_passages = 8
 max_synthesis_attempts = 2
-
-# Petit modèle pour planifier et juger : son quota Groq est séparé de celui du rédacteur
-[agent.planner_llm]
-provider = "groq"
-model = "openai/gpt-oss-20b"
-max_tokens = 1000
-temperature = 0.0
-reasoning_effort = "low"
-tokens_per_minute = 8000
 
 [judge]
 provider = "gemini"

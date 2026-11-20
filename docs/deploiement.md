@@ -81,6 +81,14 @@ az ad app federated-credential create --id $app --parameters `
 "AZURE_CLIENT_ID=$app"; "AZURE_TENANT_ID=$tenant"; "AZURE_SUBSCRIPTION_ID=$sub"
 ```
 
+**Attention au « subject »** : GitHub peut présenter un sujet qui contient les identifiants
+numériques du compte et du dépôt, par exemple
+`repo:<compte>@<id>/ledger-agent@<id>:environment:production`. Le sujet déclaré dans Azure doit
+être **exactement** celui affiché à la ligne `subject claim` du journal de l'étape `azure/login`.
+En cas d'erreur `AADSTS70021` (aucun sujet ne correspond), on remplace la confiance avec ce sujet.
+En cas d'erreur `AADSTS700016`, c'est la valeur du secret `AZURE_CLIENT_ID` qui est fausse : elle
+doit valoir l'`appId` donné par `az ad app list --display-name ledger-agent-github`.
+
 Puis, dans GitHub → **Settings** du dépôt :
 1. **Environments** → **New environment** → `production`.
 2. **Secrets and variables** → **Actions** → onglet **Secrets** : ajouter `AZURE_CLIENT_ID`,

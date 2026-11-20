@@ -1,5 +1,6 @@
 """Client pour les API compatibles OpenAI (Groq), sans SDK : un simple appel HTTP."""
 
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -9,7 +10,14 @@ import httpx
 
 from ledger_agent.common.rate_limit import TokenRateLimiter
 from ledger_agent.llm.http_errors import daily_quota_wait, parse_seconds, sanitize
-from ledger_agent.llm.types import CompletionParams, LLMError, LLMQuotaError, LLMResponse, Message
+from ledger_agent.llm.types import (
+    CompletionParams,
+    LLMError,
+    LLMQuotaError,
+    LLMResponse,
+    Message,
+    ToolCall,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +28,13 @@ MAX_BACKOFF_SECONDS = 60.0
 CHARS_PER_TOKEN = 4
 
 
-def estimate_tokens(messages: list[Message], max_tokens: int) -> int:
-    prompt_chars = sum(len(m["content"]) for m in messages)
+def estimate_tokens(
+    messages: list[Message], max_tokens: int, tools: tuple[dict[str, Any], ...] = ()
+) -> int:
+    # Les appels d'outils et leurs définitions comptent aussi dans le quota
+    prompt_chars = sum(
+        len(m.get("content") or "") + len(json.dumps(m.get("tool_calls", []))) for m in messages
+    ) + len(json.dumps(list(tools)))
     # On réserve une sortie typique plutôt que max_tokens, qui est rarement atteint
     return prompt_chars // CHARS_PER_TOKEN + min(max_tokens, 600)
 
@@ -76,6 +89,9 @@ class OpenAICompatibleClient:
             body["reasoning_effort"] = params.reasoning_effort
         if params.json_mode:
             body["response_format"] = {"type": "json_object"}
+        if params.tools:
+            body["tools"] = list(params.tools)
+            body["tool_choice"] = "auto"
         return body
 
     def _raise_if_quota_exhausted(self, response: httpx.Response) -> None:
@@ -98,7 +114,7 @@ class OpenAICompatibleClient:
         for attempt in range(self._max_retries + 1):
             is_last_attempt = attempt == self._max_retries
             reservation = (
-                self._limiter.acquire(estimate_tokens(messages, params.max_tokens))
+                self._limiter.acquire(estimate_tokens(messages, params.max_tokens, params.tools))
                 if self._limiter
                 else None
             )
@@ -125,6 +141,17 @@ class OpenAICompatibleClient:
                 payload = response.json()
                 choice = payload["choices"][0]
                 text = (choice["message"].get("content") or "").strip()
+                tool_calls: list[ToolCall] = [
+                    {
+                        "id": str(call["id"]),
+                        "type": "function",
+                        "function": {
+                            "name": str(call["function"]["name"]),
+                            "arguments": str(call["function"].get("arguments") or "{}"),
+                        },
+                    }
+                    for call in choice["message"].get("tool_calls") or []
+                ]
             except (ValueError, KeyError, IndexError, TypeError) as exc:
                 raise LLMError(f"Réponse inattendue : {sanitize(response.text)}") from exc
             usage = payload.get("usage") or {}
@@ -135,6 +162,7 @@ class OpenAICompatibleClient:
                 completion_tokens=int(usage.get("completion_tokens", 0)),
                 latency_s=latency,
                 extra={"finish_reason": str(choice.get("finish_reason", ""))},
+                tool_calls=tool_calls,
             )
             if self._limiter and reservation is not None:
                 self._limiter.settle(reservation, result.total_tokens)

@@ -12,6 +12,7 @@ from ledger_agent.evaluation.dataset import (
     EvidencePage,
     Question,
     SplitError,
+    fast_subset,
     load_or_create_split,
     make_split,
     validate_split,
@@ -78,6 +79,24 @@ def test_split_file_is_frozen_once_written(tmp_path: Path) -> None:
     first = load_or_create_split(path, make_questions())
 
     assert load_or_create_split(path, make_questions()) == first
+
+
+def test_fast_subset_is_inside_dev_balanced_and_added_without_touching_dev(
+    tmp_path: Path,
+) -> None:
+    questions = make_questions()
+    path = tmp_path / "splits.json"
+    old = make_split(questions)
+    path.write_text(json.dumps(old), encoding="utf-8")  # fichier écrit avant dev_rapide
+
+    split = load_or_create_split(path, questions)
+
+    fast = split["dev_rapide"]
+    assert len(fast) == 20 and set(fast) <= set(split["dev"])
+    assert (split["dev"], split["test"]) == (old["dev"], old["test"])
+    types = Counter(q.question_type for q in questions if q.id in set(fast))
+    assert max(types.values()) - min(types.values()) <= 1
+    assert fast == fast_subset(questions, split["dev"])  # tirage reproductible
 
 
 # Statistiques

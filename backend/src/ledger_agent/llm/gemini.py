@@ -77,11 +77,12 @@ class GeminiClient:
         self._client.close()
 
     def _body(self, messages: list[Message], params: CompletionParams) -> dict[str, Any]:
-        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+        # Le juge Gemini ne reçoit que du texte : un contenu absent devient une chaîne vide
+        system = "\n\n".join(m["content"] or "" for m in messages if m["role"] == "system")
         contents = [
             {
                 "role": "model" if m["role"] == "assistant" else "user",
-                "parts": [{"text": m["content"]}],
+                "parts": [{"text": m["content"] or ""}],
             }
             for m in messages
             if m["role"] != "system"

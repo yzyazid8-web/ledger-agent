@@ -15,18 +15,19 @@ ORDER = (
     "naive",
     "hybrid",
     "hybrid_rerank",
+    "workflow",
     "agent_sans_xbrl",
-    "agent_sans_juge",
     "agent_sans_verif",
     "agent",
 )
 # Comparaisons qui répondent aux questions de l'étude : (référence, configuration comparée)
 COMPARISONS = (
     ("naive", "hybrid"),
+    ("hybrid", "workflow"),
     ("hybrid", "agent"),
+    ("workflow", "agent"),
     ("naive", "agent"),
     ("agent_sans_xbrl", "agent"),
-    ("agent_sans_juge", "agent"),
     ("agent_sans_verif", "agent"),
 )
 

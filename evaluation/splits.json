@@ -183,5 +183,27 @@
     "financebench_id_10130",
     "financebench_id_10285",
     "financebench_id_10420"
+  ],
+  "dev_rapide": [
+    "financebench_id_00070",
+    "financebench_id_00288",
+    "financebench_id_00302",
+    "financebench_id_00394",
+    "financebench_id_00460",
+    "financebench_id_00552",
+    "financebench_id_00563",
+    "financebench_id_00685",
+    "financebench_id_00735",
+    "financebench_id_01009",
+    "financebench_id_01275",
+    "financebench_id_01328",
+    "financebench_id_01858",
+    "financebench_id_03620",
+    "financebench_id_04412",
+    "financebench_id_04481",
+    "financebench_id_04660",
+    "financebench_id_04672",
+    "financebench_id_06272",
+    "financebench_id_10136"
   ]
 }

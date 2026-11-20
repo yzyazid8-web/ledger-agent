@@ -8,10 +8,10 @@ const DESCRIPTIONS: Record<string, string> = {
   naive: "RAG classique : recherche vectorielle, une génération",
   hybrid: "Recherche hybride filtrée (vecteurs + BM25), sans agent",
   hybrid_rerank: "Recherche hybride + reranker",
-  agent_sans_xbrl: "Agent sans les données officielles XBRL",
-  agent_sans_juge: "Agent sans le contrôle de suffisance",
-  agent_sans_verif: "Agent sans la vérification des chiffres",
-  agent: "Agent complet",
+  workflow: "Workflow agentique à étapes fixes (le LLM décide dans chaque étape)",
+  agent_sans_xbrl: "Agent ReAct sans les outils de données XBRL",
+  agent_sans_verif: "Agent ReAct sans la vérification des chiffres",
+  agent: "Agent ReAct complet : le LLM choisit ses outils et lit leurs résultats",
 };
 
 function pct(value: number | null | undefined): string {

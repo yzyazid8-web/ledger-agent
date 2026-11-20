@@ -7,6 +7,7 @@ from contextlib import ExitStack
 from typing import Any, Protocol
 
 from ledger_agent.agent.graph import FinancialAgent
+from ledger_agent.agent.react import ReactAgent
 from ledger_agent.config import Settings
 from ledger_agent.evaluation.components import build_agent, build_retriever
 from ledger_agent.evaluation.config import load_run_config
@@ -39,7 +40,9 @@ class LocalAgentService:
             raise ValueError(f"{settings.api_config} n'est pas une configuration d'agent")
         self._stack = ExitStack()
         retriever = build_retriever(self._config.retrieval, settings, self._stack)
-        self._agent: FinancialAgent = build_agent(self._config, settings, retriever, self._stack)
+        self._agent: FinancialAgent | ReactAgent = build_agent(
+            self._config, settings, retriever, self._stack
+        )
         # Qdrant en mode local et DuckDB ne supportent pas les accès concurrents :
         # les questions sont traitées une à une (suffisant pour une démonstration)
         self._lock = threading.Lock()

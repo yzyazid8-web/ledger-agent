@@ -104,27 +104,37 @@ class FinancialAgent:
     def run(self, question: str) -> PipelineAnswer:
         started = time.perf_counter()
         state = self.invoke(question)
-        evidence = state.get("evidence", [])
-        passages = [e for e in evidence if e.kind == "passage"]
-        cited_ids = set(state["synthesis"].cited) if state.get("synthesis") else set()
-        text = state.get("text", "")
-        trace = [
-            *state.get("trace", []),
-            {"node": "total", "ms": round((time.perf_counter() - started) * 1000)},
-        ]
-        return PipelineAnswer(
-            text=text,
-            abstained=bool(state.get("abstained")) or is_abstention(text),
-            retrieved=[
-                RetrievedPage(e.chunk_id or "", e.doc_name or "", e.page_index or 0, e.score)
-                for e in passages
-            ],
-            cited=[(e.doc_name or "", e.page_index or 0) for e in passages if e.id in cited_ids],
-            llm_calls=state.get("llm_calls", []),
-            retrieval_s=state.get("retrieval_s", 0.0),
-            search=_to_search_outcome(state),
-            trace=[_jsonable(t) for t in trace],
-        )
+        return pipeline_answer(state, time.perf_counter() - started)
+
+
+def _cited(state: dict[str, Any]) -> list[str]:
+    # Agent ReAct : citations transmises avec submit_answer ; workflow : sortie de la synthèse
+    if "cited" in state:
+        return list(state["cited"] or [])
+    synthesis = state.get("synthesis")
+    return list(synthesis.cited) if synthesis else []
+
+
+def pipeline_answer(state: dict[str, Any], elapsed_s: float) -> PipelineAnswer:
+    """Réponse au format commun de l'évaluation, quel que soit le type d'agent."""
+    evidence = state.get("evidence", [])
+    passages = [e for e in evidence if e.kind == "passage"]
+    cited_ids = set(_cited(state))
+    text = state.get("text", "")
+    trace = [*state.get("trace", []), {"node": "total", "ms": round(elapsed_s * 1000)}]
+    return PipelineAnswer(
+        text=text,
+        abstained=bool(state.get("abstained")) or is_abstention(text),
+        retrieved=[
+            RetrievedPage(e.chunk_id or "", e.doc_name or "", e.page_index or 0, e.score)
+            for e in passages
+        ],
+        cited=[(e.doc_name or "", e.page_index or 0) for e in passages if e.id in cited_ids],
+        llm_calls=state.get("llm_calls", []),
+        retrieval_s=state.get("retrieval_s", 0.0),
+        search=_to_search_outcome(state),
+        trace=[_jsonable(t) for t in trace],
+    )
 
 
 EVIDENCE_PREVIEW_CHARS = 1500
@@ -134,8 +144,7 @@ def answer_event(state: dict[str, Any], elapsed_s: float) -> dict[str, Any]:
     """Réponse finale avec ses preuves et ses calculs, prête à afficher dans l'interface."""
     text = state.get("text", "")
     abstained = bool(state.get("abstained")) or is_abstention(text)
-    synthesis = state.get("synthesis")
-    calculations: list[dict[str, Any]] = next(
+    calculations: list[dict[str, Any]] = state.get("calculations") or next(
         (t["calculations"] for t in reversed(state.get("trace", [])) if "calculations" in t), []
     )
     calls = state.get("llm_calls", [])
@@ -144,7 +153,7 @@ def answer_event(state: dict[str, Any], elapsed_s: float) -> dict[str, Any]:
         "text": text,
         "final_answer": None if abstained else extract_final_answer(text),
         "abstained": abstained,
-        "cited": list(synthesis.cited) if synthesis else [],
+        "cited": _cited(state),
         "evidence": [
             {
                 "id": e.id,

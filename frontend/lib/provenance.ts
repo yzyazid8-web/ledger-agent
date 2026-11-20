@@ -11,7 +11,9 @@ export type Segment =
   | { kind: "citation"; id: string }
   | { kind: "number"; text: string; provenance: Provenance | null };
 
-const TOKEN = /\[(E\d+)\]|\$?\d[\d,]*(?:\.\d+)?%?/g;
+// Citation entre crochets « [E3] », citation nue « E3 » (le modèle oublie parfois les crochets),
+// ou nombre. La citation nue passe avant le nombre : sinon « E3 » serait lu comme le nombre 3
+const TOKEN = /\[(E\d+)\]|\b(E\d+)\b|\$?\d[\d,]*(?:\.\d+)?%?/g;
 const SCALES = [1, 1e3, 1e6, 1e9];
 
 function parse(text: string): number {
@@ -42,12 +44,15 @@ export function segment(
   evidence: Evidence[],
 ): Segment[] {
   const segments: Segment[] = [];
+  const known = new Set(evidence.map((e) => e.id));
   let last = 0;
   for (const match of text.matchAll(TOKEN)) {
     const start = match.index ?? 0;
     if (start > last) segments.push({ kind: "text", text: text.slice(last, start) });
-    if (match[1]) {
-      segments.push({ kind: "citation", id: match[1] });
+    const citation = match[1] ?? match[2];
+    if (citation) {
+      // Une citation n'est cliquable que si elle désigne une source réellement collectée
+      segments.push(known.has(citation) ? { kind: "citation", id: citation } : { kind: "text", text: match[0] });
     } else {
       const value = parse(match[0]);
       // Les années (« FY2018 ») ne sont pas des montants à expliquer

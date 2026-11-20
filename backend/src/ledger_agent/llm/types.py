@@ -1,12 +1,28 @@
 """Types partagés par tous les fournisseurs de LLM."""
 
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, TypedDict
+from typing import Any, Literal, NotRequired, Protocol, TypedDict
+
+
+class ToolCallFunction(TypedDict):
+    name: str
+    # Arguments sérialisés en JSON, tels que renvoyés par le modèle
+    arguments: str
+
+
+class ToolCall(TypedDict):
+    id: str
+    type: Literal["function"]
+    function: ToolCallFunction
 
 
 class Message(TypedDict):
-    role: Literal["system", "user", "assistant"]
-    content: str
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str | None
+    # Message de l'assistant qui demande des appels d'outils
+    tool_calls: NotRequired[list[ToolCall]]
+    # Message « tool » qui rapporte le résultat d'un appel
+    tool_call_id: NotRequired[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +32,8 @@ class CompletionParams:
     # Utilisé seulement par les modèles de raisonnement (gpt-oss) : "low", "medium", "high"
     reasoning_effort: str | None = None
     json_mode: bool = False
+    # Définitions d'outils au format OpenAI (type « function ») ; vide = aucun outil proposé
+    tools: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +45,7 @@ class LLMResponse:
     latency_s: float = 0.0
     cached: bool = False
     extra: dict[str, str] = field(default_factory=dict)
+    tool_calls: list[ToolCall] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:

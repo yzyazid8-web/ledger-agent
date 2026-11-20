@@ -53,15 +53,25 @@ class RetrievalConfig(_Strict):
 
 
 class AgentSettings(_Strict):
-    # Petit modèle pour planifier et juger la suffisance (quota Groq séparé du gros modèle)
-    planner_llm: LLMConfig
+    # "react" : le LLM choisit ses outils et lit leurs résultats ;
+    # "workflow" : graphe d'étapes fixes, le LLM ne décide qu'à l'intérieur de chaque étape
+    mode: Literal["react", "workflow"] = "react"
+    # Petit modèle pour planifier et juger la suffisance (mode workflow seulement)
+    planner_llm: LLMConfig | None = None
     use_xbrl: bool = True
     use_grader: bool = True
     use_verifier: bool = True
+    max_steps: int = Field(default=8, ge=2, le=20)
     max_search_rounds: int = Field(default=2, ge=1, le=4)
     passages_per_query: int = Field(default=3, ge=1, le=10)
     max_passages: int = Field(default=8, ge=1, le=20)
     max_synthesis_attempts: int = Field(default=2, ge=1, le=3)
+
+    @model_validator(mode="after")
+    def _workflow_needs_planner(self) -> "AgentSettings":
+        if self.mode == "workflow" and self.planner_llm is None:
+            raise ValueError("le mode « workflow » exige une section [agent.planner_llm]")
+        return self
 
 
 class RunConfig(_Strict):

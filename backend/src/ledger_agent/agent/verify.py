@@ -55,16 +55,29 @@ def _traced(mention: NumberMention, sources: list[float]) -> bool:
     return False
 
 
+def _sign_conflict(mention: NumberMention, results: list[CalculationResult]) -> bool:
+    """Vrai si le nombre reprend un résultat négatif en le présentant comme positif."""
+    matching = [r for r in results if _traced(mention, [abs(r.value), abs(r.value) / 100])]
+    # « une hausse de 4 % » pour un résultat de -4 : le texte inverse le sens du calcul.
+    # L'inverse (« une baisse de 4 % » pour +4) reste accepté : c'est souvent une amplitude
+    return bool(matching) and all(r.value < 0 for r in matching) and not mention.negative
+
+
 def verify_numbers(
     text: str, evidence: list[Evidence], results: list[CalculationResult]
 ) -> VerificationResult:
-    """Liste les nombres de `text` qui ne viennent ni d'une preuve, ni d'un calcul."""
-    # Les références [E3] ne sont pas des nombres à vérifier
-    cleaned = re.sub(r"\[E\d+\]", " ", text)
+    """Liste les nombres de `text` sans source, ou dont le signe contredit le calcul."""
+    # Les références aux preuves et aux calculs ([E3], E3, C1) ne sont pas des nombres
+    cleaned = re.sub(r"\[?\b[EC]\d+\b\]?", " ", text)
     sources = _source_values(evidence, results)
-    unverified = [
-        m.text for m in parse_numbers(cleaned) if not _skippable(m) and not _traced(m, sources)
-    ]
+    unverified: list[str] = []
+    for mention in parse_numbers(cleaned):
+        if _skippable(mention):
+            continue
+        if not _traced(mention, sources):
+            unverified.append(mention.text)
+        elif _sign_conflict(mention, results):
+            unverified.append(f"{mention.text} (signe inversé par rapport au calcul)")
     return VerificationResult(unverified=list(dict.fromkeys(unverified)))
 
 

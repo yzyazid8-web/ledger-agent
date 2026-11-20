@@ -16,7 +16,7 @@ import sys
 from ledger_agent.config import get_settings
 from ledger_agent.evaluation.compare import ComparisonError, compare_runs
 from ledger_agent.evaluation.config import load_run_config
-from ledger_agent.evaluation.dataset import SplitError
+from ledger_agent.evaluation.dataset import SPLITS, SplitError
 from ledger_agent.evaluation.predict import run_predictions
 from ledger_agent.evaluation.report import build_report, report_markdown
 from ledger_agent.evaluation.retrieval_eval import evaluate_retrieval
@@ -35,7 +35,7 @@ def main() -> None:
     ):
         p = sub.add_parser(command, help=help_text)
         p.add_argument("config", help="Nom de configuration (ex. naive) ou chemin .toml")
-        p.add_argument("--split", choices=["dev", "test"], default="dev")
+        p.add_argument("--split", choices=list(SPLITS), default="dev")
         if command in ("run", "score"):
             p.add_argument("--no-judge", action="store_true", help="N'appelle pas le juge LLM")
         if command == "run":
@@ -44,10 +44,10 @@ def main() -> None:
     compare = sub.add_parser("compare", help="Compare deux exécutions (test de McNemar)")
     compare.add_argument("a", help="Configuration de référence")
     compare.add_argument("b", help="Configuration comparée")
-    compare.add_argument("--split", choices=["dev", "test"], default="dev")
+    compare.add_argument("--split", choices=list(SPLITS), default="dev")
 
     report = sub.add_parser("report", help="Tableau d'ablation de toutes les configurations")
-    report.add_argument("--split", choices=["dev", "test"], default="dev")
+    report.add_argument("--split", choices=list(SPLITS), default="dev")
 
     args = parser.parse_args()
     logging.basicConfig(
