@@ -19,9 +19,10 @@ statistiques appariés et juge LLM validé.
 | 2 | RAG naïf de référence et harnais d'évaluation | ✅ |
 | 3 | Outils : recherche hybride filtrée, faits XBRL typés, calculatrice sûre | ✅ |
 | 3 bis | Rigueur de l'évaluation, suite à un audit externe | ✅ |
-| 4 | Agent LangGraph (routage, planification, vérification des chiffres) | ⏳ à venir |
-| 5 | Étude d'ablation complète sur le jeu test | ⏳ à venir |
-| 6–7 | API FastAPI et interface Next.js | ⏳ à venir |
+| 4 | Agent LangGraph (planification, faits XBRL, calculs délégués, vérification des chiffres) | ✅ |
+| 5 | Étude d'ablation (dev en cours, puis passage unique sur le jeu test) | 🔄 en cours |
+| 6 | API FastAPI : étapes de l'agent diffusées en direct (SSE) | ✅ |
+| 7 | Interface Next.js | ⏳ à venir |
 | 8–9 | Docker, CI/CD et déploiement sur Azure | ⏳ à venir |
 
 ## Ce qui fonctionne aujourd'hui
@@ -45,6 +46,25 @@ et **cet élargissement est signalé**, jamais silencieux.
   les chiffres retraités après publication.
 - `calculate` : calculatrice qui analyse l'expression en arbre syntaxique, sans jamais l'exécuter.
   Chaque calcul reçoit un identifiant de source.
+
+**Agent** (`agent/`) : un graphe LangGraph en cinq étapes.
+
+```
+planifier ─► collecter ─► juger la suffisance ─┬─► synthétiser ─► vérifier ─┬─► réponse
+(gpt-oss-20b)  (outils)    (gpt-oss-20b)       │   (gpt-oss-120b)  (règles)  │
+                  ▲                            │         ▲                   │
+                  └── nouvelles requêtes ──────┘         └── chiffre refusé ─┘
+```
+
+- Le modèle **ne fait aucune arithmétique** : il déclare ses calculs (expression et entrées reliées
+  à une preuve), la calculatrice les exécute et insère le résultat dans le texte.
+- Le **vérificateur**, par règles, exige que chaque nombre de la réponse vienne d'une preuve ou
+  d'un calcul. Sinon, il fait réessayer le modèle, puis l'agent s'abstient.
+- Chaque brique s'active par configuration, ce qui permet l'étude d'ablation.
+
+**API** (`api/`) : `POST /chat` diffuse chaque étape de l'agent en direct (Server-Sent Events),
+puis la réponse avec ses preuves et ses calculs. `POST /ask` renvoie le tout en une seule réponse
+JSON, et `GET /companies` liste les entreprises couvertes.
 
 **Évaluation** (`evaluation/`) : voir la méthodologie ci-dessous.
 
@@ -93,12 +113,20 @@ uv run poe ingest-docs          # PDF -> chunks -> Qdrant + BM25 (environ 2 h su
 uv run poe eval-retrieval hybrid --split dev   # recherche seule, gratuite
 uv run poe eval naive --split dev              # génération + notation
 uv run poe eval hybrid --split dev
-uv run poe eval-compare naive hybrid --split dev
+uv run poe eval agent --split dev
+uv run poe eval-report --split dev             # tableau d'ablation + tests de McNemar
+
+uv run poe api                                 # API sur http://localhost:8000/docs
 ```
 
 Les offres gratuites limitent le débit : Groq accepte 200 000 tokens par jour et par modèle.
 L'évaluation s'arrête proprement quand le quota est atteint, et reprend là où elle s'est arrêtée
 en relançant la même commande. Le cache évite de repayer les appels déjà faits.
+
+L'API sert la configuration `agent` par défaut. Quand le quota du gros modèle est épuisé,
+`API_CONFIG=agent_leger` fait rédiger les réponses par `gpt-oss-20b`, qui a son propre quota.
+Si les appels à Groq échouent avec `ConnectError`, `FORCE_IPV4=true` contourne une route IPv6
+défaillante.
 
 ## Structure du dépôt
 

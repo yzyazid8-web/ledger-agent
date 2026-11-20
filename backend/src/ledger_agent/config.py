@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # FORCE_IPV4=true fait passer les appels LLM par IPv4
     force_ipv4: bool = False
 
+    # API : configuration d'agent servie (un nom de evaluation/configs) et origines autorisées
+    api_config: str = "agent"
+    cors_origins: str = "http://localhost:3000"
+
     @field_validator("data_dir", mode="before")
     @classmethod
     def _empty_data_dir_uses_default(cls, value: object) -> object:

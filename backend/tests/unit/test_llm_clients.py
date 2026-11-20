@@ -194,3 +194,20 @@ def test_force_ipv4_binds_the_transport_to_an_ipv4_address() -> None:
 
     pool = client._client._transport._pool  # type: ignore[attr-defined]
     assert pool._local_address == "0.0.0.0"
+
+
+def test_cache_can_be_used_from_another_thread(tmp_path: Path) -> None:
+    # Régression : l'API traite chaque requête dans un fil différent du fil de création
+    import threading
+
+    cached = CachedLLM(CountingLLM(), tmp_path / "cache.sqlite")
+    results: list[str] = []
+
+    worker = threading.Thread(
+        target=lambda: results.append(cached.complete(MESSAGES, CompletionParams()).text)
+    )
+    worker.start()
+    worker.join()
+    cached.close()
+
+    assert results == ["answer 1"]
