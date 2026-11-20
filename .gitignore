@@ -18,6 +18,7 @@ out/
 
 # Données et artefacts locaux
 data/
+data-snapshot/
 .cache/
 *.duckdb
 *.duckdb.wal

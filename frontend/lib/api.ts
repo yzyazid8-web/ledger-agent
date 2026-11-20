@@ -1,6 +1,7 @@
 import type { AblationReport, AgentEvent, Company } from "./types";
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Le navigateur passe par le relais de l'interface (app/api/[...path]/route.ts), qui joint l'API
+export const API_URL = "/api";
 
 export async function fetchCompanies(): Promise<Company[]> {
   const response = await fetch(`${API_URL}/companies`);

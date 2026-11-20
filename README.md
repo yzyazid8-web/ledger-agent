@@ -22,8 +22,9 @@ statistiques appariés et juge LLM validé.
 | 4 | Agent LangGraph (planification, faits XBRL, calculs délégués, vérification des chiffres) | ✅ |
 | 5 | Étude d'ablation (dev en cours, puis passage unique sur le jeu test) | 🔄 en cours |
 | 6 | API FastAPI : étapes de l'agent diffusées en direct (SSE) | ✅ |
-| 7 | Interface Next.js | ⏳ à venir |
-| 8–9 | Docker, CI/CD et déploiement sur Azure | ⏳ à venir |
+| 7 | Interface Next.js : raisonnement en direct, sources, origine de chaque chiffre | ✅ |
+| 8 | Images Docker construites, testées et publiées par la CI (GHCR) | ✅ |
+| 9 | Déploiement sur Azure Container Apps | ⏳ à venir |
 
 ## Ce qui fonctionne aujourd'hui
 
@@ -122,6 +123,19 @@ uv run poe api                                 # API sur http://localhost:8000/d
 Les offres gratuites limitent le débit : Groq accepte 200 000 tokens par jour et par modèle.
 L'évaluation s'arrête proprement quand le quota est atteint, et reprend là où elle s'est arrêtée
 en relançant la même commande. Le cache évite de repayer les appels déjà faits.
+
+### Avec Docker
+
+Les images de l'API et de l'interface sont construites et testées par GitHub Actions à chaque PR,
+puis publiées sur GHCR. L'image de l'API embarque un **snapshot versionné** des données
+(index et base de faits, ≈ 105 Mo), publié comme Release GitHub et vérifié par son empreinte
+(`data-snapshot.json`).
+
+```bash
+# Avec Docker installé : extraire le snapshot, puis tout lancer
+cd backend && uv run python -m ledger_agent.snapshot extract <archive> --dest ../data-snapshot --sha256 <empreinte>
+cd .. && docker compose up --build      # interface sur http://localhost:3000
+```
 
 L'API sert la configuration `agent` par défaut. Quand le quota du gros modèle est épuisé,
 `API_CONFIG=agent_leger` fait rédiger les réponses par `gpt-oss-20b`, qui a son propre quota.

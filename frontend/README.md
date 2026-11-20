@@ -12,7 +12,9 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-L'adresse de l'API se règle avec `NEXT_PUBLIC_API_URL` (par défaut `http://localhost:8000`).
+Le navigateur passe par le relais `/api/*` de l'interface, qui joint l'API à l'adresse donnée par
+`API_URL` (par défaut `http://localhost:8000`). Cette adresse est lue à l'exécution : la même image
+Docker fonctionne en local et sur Azure.
 
 ## Pages
 

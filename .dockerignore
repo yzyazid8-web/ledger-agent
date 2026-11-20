@@ -1,0 +1,10 @@
+# Contexte de l'image de l'API : tout est exclu, sauf ce que le Dockerfile copie
+*
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/src
+!evaluation/configs
+!evaluation/reports
+!evaluation/splits.json
+!data-snapshot
+**/__pycache__

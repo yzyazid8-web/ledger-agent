@@ -67,8 +67,8 @@ export default function Home() {
       <section className="flex min-w-0 flex-col gap-4">
         {apiDown && (
           <div className="rounded-lg bg-err-soft p-3 text-sm text-err">
-            L&apos;API ne répond pas sur {process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}. Lance-la avec{" "}
-            <code className="font-mono">uv run poe api</code>.
+            L&apos;API ne répond pas. En local, lance-la avec <code className="font-mono">uv run poe api</code>{" "}
+            (adresse réglable avec la variable <code className="font-mono">API_URL</code>).
           </div>
         )}
 
