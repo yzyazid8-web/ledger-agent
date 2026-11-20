@@ -7,10 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-Split = Literal["dev", "test"]
+# « dev_rapide » : sous-ensemble fixe de dev, pour itérer vite malgré les quotas gratuits.
+# Moins de questions, donc moins de puissance statistique : à garder en tête face aux écarts
+Split = Literal["dev", "test", "dev_rapide"]
+SPLITS: tuple[Split, ...] = ("dev", "test", "dev_rapide")
 
 SPLIT_STRATEGY = "doc_name"
 DEFAULT_DEV_SIZE = 50
+FAST_SUBSET_SIZE = 20
 DEFAULT_SEED = 13
 # Écart toléré par type de question par rapport à la répartition proportionnelle
 TYPE_TOLERANCE = 2
@@ -100,6 +104,28 @@ def validate_split(split: dict[str, Any], questions: list[Question]) -> None:
     doc_of = {q.id: q.doc_name for q in questions}
     if {doc_of[i] for i in dev} & {doc_of[i] for i in test}:
         raise SplitError("Un même document apparaît en dev et en test")
+    if not set(split.get("dev_rapide", [])) <= dev:
+        raise SplitError("dev_rapide doit être inclus dans dev")
+
+
+def fast_subset(
+    questions: list[Question], dev_ids: list[str], size: int = FAST_SUBSET_SIZE
+) -> list[str]:
+    """Tirage fixe dans dev, équilibré entre les types de questions."""
+    by_type: dict[str, list[str]] = defaultdict(list)
+    wanted = set(dev_ids)
+    for q in sorted(questions, key=lambda q: q.id):
+        if q.id in wanted:
+            by_type[q.question_type].append(q.id)
+    rng = random.Random(DEFAULT_SEED)
+    types = sorted(by_type)
+    chosen: list[str] = []
+    for i, question_type in enumerate(types):
+        ids = by_type[question_type]
+        rng.shuffle(ids)
+        quota = size // len(types) + (1 if i < size % len(types) else 0)
+        chosen.extend(ids[:quota])
+    return sorted(chosen)
 
 
 def load_or_create_split(path: Path, questions: list[Question]) -> dict[str, Any]:
@@ -108,6 +134,9 @@ def load_or_create_split(path: Path, questions: list[Question]) -> dict[str, Any
         split: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     else:
         split = make_split(questions)
+    if "dev_rapide" not in split:
+        # Ajouté une seule fois, sans toucher à dev ni à test
+        split["dev_rapide"] = fast_subset(questions, split["dev"])
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(split, indent=2) + "\n", encoding="utf-8")
     validate_split(split, questions)

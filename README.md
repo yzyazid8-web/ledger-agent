@@ -19,12 +19,12 @@ statistiques appariés et juge LLM validé.
 | 2 | RAG naïf de référence et harnais d'évaluation | ✅ |
 | 3 | Outils : recherche hybride filtrée, faits XBRL typés, calculatrice sûre | ✅ |
 | 3 bis | Rigueur de l'évaluation, suite à un audit externe | ✅ |
-| 4 | Agent LangGraph (planification, faits XBRL, calculs délégués, vérification des chiffres) | ✅ |
+| 4 | Agent ReAct LangGraph : le modèle choisit ses outils, lit leurs résultats, est vérifié | ✅ |
 | 5 | Étude d'ablation (dev en cours, puis passage unique sur le jeu test) | 🔄 en cours |
 | 6 | API FastAPI : étapes de l'agent diffusées en direct (SSE) | ✅ |
 | 7 | Interface Next.js : raisonnement en direct, sources, origine de chaque chiffre | ✅ |
 | 8 | Images Docker construites, testées et publiées par la CI (GHCR) | ✅ |
-| 9 | Déploiement sur Azure Container Apps ([guide](docs/deploiement.md)) | 🔄 en cours |
+| 9 | Déploiement continu sur Azure Container Apps ([guide](docs/deploiement.md)) | ✅ |
 
 ## Ce qui fonctionne aujourd'hui
 
@@ -42,26 +42,40 @@ entreprise/exercice repérés dans la question. Les filtres sont élargis si les
 et **cet élargissement est signalé**, jamais silencieux.
 
 **Outils de l'agent** (`tools/`)
-- `search_concepts` / `get_financial_fact` : accès typé à DuckDB. L'agent n'écrit jamais de SQL :
+- `search_filings` : recherche hybride dans les rapports, filtrée par entreprise et exercice.
+- `find_concepts` / `get_fact` : accès typé à DuckDB. L'agent n'écrit jamais de SQL :
   les requêtes sont paramétrées et la connexion est en lecture seule. Ces outils signalent aussi
   les chiffres retraités après publication.
 - `calculate` : calculatrice qui analyse l'expression en arbre syntaxique, sans jamais l'exécuter.
   Chaque calcul reçoit un identifiant de source.
 
-**Agent** (`agent/`) : un graphe LangGraph en cinq étapes.
+**Agent** (`agent/`) : un agent **ReAct** construit avec LangGraph. À chaque tour, le modèle
+(`gpt-oss-120b`) **choisit lui-même** l'outil à appeler et ses arguments, **lit le résultat**, puis
+décide de la suite : chercher autrement, changer d'exercice, calculer, répondre ou s'abstenir.
 
 ```
-planifier ─► collecter ─► juger la suffisance ─┬─► synthétiser ─► vérifier ─┬─► réponse
-(gpt-oss-20b)  (outils)    (gpt-oss-20b)       │   (gpt-oss-120b)  (règles)  │
-                  ▲                            │         ▲                   │
-                  └── nouvelles requêtes ──────┘         └── chiffre refusé ─┘
+question ─► agent ──appels d'outils──► outils ──observations──┐
+              ▲  │                                            │
+              │  └──────────────────◄─────────────────────────┘
+              │  submit_answer                    abstain
+              │     ▼                                ▼
+              └─ vérifier (règles) ─► réponse    abstention
+               chiffre refusé
 ```
 
-- Le modèle **ne fait aucune arithmétique** : il déclare ses calculs (expression et entrées reliées
-  à une preuve), la calculatrice les exécute et insère le résultat dans le texte.
+- **Outils exposés au modèle** : `search_filings`, `find_concepts`, `get_fact`, `calculate`,
+  `submit_answer` et `abstain`. Une erreur d'outil (concept inconnu, exercice absent) est
+  renvoyée comme observation : le modèle peut se corriger au tour suivant.
+- Le modèle **ne fait aucune arithmétique** : chaque entrée d'un calcul cite sa source (une preuve
+  `E3` ou un calcul précédent `C1`) et sa valeur est contrôlée avant exécution.
 - Le **vérificateur**, par règles, exige que chaque nombre de la réponse vienne d'une preuve ou
-  d'un calcul. Sinon, il fait réessayer le modèle, puis l'agent s'abstient.
-- Chaque brique s'active par configuration, ce qui permet l'étude d'ablation.
+  d'un calcul, **avec le bon signe**. Sinon, la réponse est renvoyée à l'agent, qui peut chercher
+  ce qui manque ; au second refus, il s'abstient.
+- **Budget d'étapes** (8 tours) : au dernier tour, seuls `submit_answer` et `abstain` sont
+  proposés, ce qui garantit l'arrêt.
+- **Point de comparaison** : `workflow.toml` garde un graphe à étapes fixes (planifier, collecter,
+  juger la suffisance, synthétiser, vérifier). L'étude d'ablation mesure ce qu'apporte le fait de
+  laisser le modèle piloter sa recherche.
 
 **API** (`api/`) : `POST /chat` diffuse chaque étape de l'agent en direct (Server-Sent Events),
 puis la réponse avec ses preuves et ses calculs. `POST /ask` renvoie le tout en une seule réponse
@@ -79,6 +93,9 @@ JSON, et `GET /companies` liste les entreprises couvertes.
   test (57 autres documents), sans aucun document commun. Le découpage est figé dans
   `evaluation/splits.json`. Tous les réglages se font sur dev, et le jeu test n'est utilisé
   qu'une fois par configuration.
+- **Sous-ensemble rapide** : `dev_rapide`, 20 questions de dev tirées une fois pour toutes et
+  équilibrées entre les types de questions, sert à itérer malgré les quotas gratuits. Avec si peu
+  de questions, seuls de grands écarts sont significatifs.
 - **Réponses chiffrées** : notées par règles, sur la seule réponse finale, avec le signe, l'échelle
   (million, milliard) et une tolérance d'arrondi.
 - **Réponses rédigées** : notées par un juge LLM (Gemini) d'une **autre famille** que le
@@ -89,7 +106,7 @@ JSON, et `GET /companies` liste les entreprises couvertes.
   McNemar exact**.
 - **Prudence** : une question en erreur ou non jugée compte comme non réussie.
 - **Reproductibilité** : chaque exécution enregistre le commit, l'empreinte de la configuration,
-  du prompt, du corpus et du découpage. Une reprise avec une configuration modifiée est refusée.
+  des prompts et du code de l'agent, du corpus et du découpage. Une reprise avec une configuration modifiée est refusée.
 
 ## Résultats
 
@@ -114,6 +131,7 @@ uv run poe ingest-docs          # PDF -> chunks -> Qdrant + BM25 (environ 2 h su
 uv run poe eval-retrieval hybrid --split dev   # recherche seule, gratuite
 uv run poe eval naive --split dev              # génération + notation
 uv run poe eval hybrid --split dev
+uv run poe eval workflow --split dev
 uv run poe eval agent --split dev
 uv run poe eval-report --split dev             # tableau d'ablation + tests de McNemar
 
@@ -138,7 +156,7 @@ cd .. && docker compose up --build      # interface sur http://localhost:3000
 ```
 
 L'API sert la configuration `agent` par défaut. Quand le quota du gros modèle est épuisé,
-`API_CONFIG=agent_leger` fait rédiger les réponses par `gpt-oss-20b`, qui a son propre quota.
+`API_CONFIG=agent_leger` fait piloter l'agent par `gpt-oss-20b`, qui a son propre quota.
 Si les appels à Groq échouent avec `ConnectError`, `FORCE_IPV4=true` contourne une route IPv6
 défaillante.
 
@@ -148,6 +166,6 @@ défaillante.
 |---|---|
 | `backend/src/ledger_agent/` | Paquet Python : ingestion, recherche, outils, LLM, évaluation |
 | `backend/tests/` | Tests unitaires et tests de bout en bout (sans réseau) |
-| `evaluation/configs/` | Configurations évaluées (`naive`, `hybrid`, `hybrid_rerank`) |
+| `evaluation/configs/` | Configurations évaluées (`naive`, `hybrid`, `hybrid_rerank`, `workflow`, `agent` et ses ablations) |
 | `evaluation/runs/` | Prédictions, scores et résumés de chaque exécution |
 | `evaluation/reports/` | Comparaisons statistiques entre configurations |

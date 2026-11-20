@@ -2,6 +2,7 @@
 
 import hashlib
 from functools import cache
+from importlib.resources import files
 
 from ledger_agent.answer_format import ABSTAIN_MARKER
 from ledger_agent.ingestion.universe import load_universe
@@ -58,3 +59,15 @@ def prompts_sha() -> str:
     """Empreinte de tous les prompts de l'agent, pour la reproductibilité des évaluations."""
     raw = planner_prompt() + GRADER_PROMPT + SYNTHESIZER_PROMPT
     return hashlib.sha256(raw.encode()).hexdigest()[:12]
+
+
+@cache
+def agent_code_sha() -> str:
+    """Empreinte du code de l'agent (graphes, outils, vérification, prompts ReAct)."""
+    digest = hashlib.sha256()
+    package = files("ledger_agent.agent")
+    for name in sorted(p.name for p in package.iterdir() if p.name.endswith(".py")):
+        # Fins de ligne normalisées : la même empreinte sous Windows et sous Linux
+        digest.update(name.encode())
+        digest.update((package / name).read_text(encoding="utf-8").replace("\r\n", "\n").encode())
+    return digest.hexdigest()[:12]

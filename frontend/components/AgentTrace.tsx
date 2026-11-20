@@ -1,6 +1,8 @@
 import type { NodeName, StepEvent } from "@/lib/types";
 
 const LABELS: Record<NodeName, { title: string; hint: string }> = {
+  agent: { title: "Décision de l'agent", hint: "quel outil appeler, ou répondre" },
+  tool: { title: "Résultat des outils", hint: "ce que l'agent observe avant de décider" },
   plan: { title: "Planification", hint: "entreprise, exercice, chiffres à chercher" },
   gather: { title: "Collecte des preuves", hint: "faits XBRL et passages des rapports" },
   grade: { title: "Contrôle de suffisance", hint: "faut-il chercher davantage ?" },
@@ -14,8 +16,45 @@ function asList<T = Dict>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+const TOOL_NAMES: Record<string, string> = {
+  search_filings: "Recherche dans les rapports",
+  find_concepts: "Recherche de concept XBRL",
+  get_fact: "Donnée officielle XBRL",
+  calculate: "Calcul",
+  submit_answer: "Réponse soumise",
+  abstain: "Abstention",
+};
+
 function Detail({ step }: { step: StepEvent }) {
   switch (step.node) {
+    case "agent": {
+      const actions = asList(step.actions);
+      return actions.length ? (
+        <ul className="space-y-1">
+          {actions.map((a, i) => (
+            <li key={i}>
+              <b>{TOOL_NAMES[String(a.tool)] ?? String(a.tool)}</b>
+              <span className="ml-1 break-all font-mono text-[11px] text-muted">{JSON.stringify(a.args)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted">Aucun outil appelé : l&apos;agent est relancé.</p>
+      );
+    }
+    case "tool":
+      return (
+        <ul className="space-y-1">
+          {asList(step.results).map((r, i) => (
+            <li key={i}>
+              {TOOL_NAMES[String(r.tool)] ?? String(r.tool)} :{" "}
+              <span className={String(r.summary).startsWith("erreur") ? "text-warn" : ""}>
+                {String(r.summary) || "reçu"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      );
     case "plan": {
       const plan = (step.plan ?? {}) as Dict;
       const metrics = asList(plan.metrics).map((m) => String(m.label));

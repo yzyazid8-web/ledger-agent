@@ -70,7 +70,7 @@ def create_app(service_factory: ServiceFactory | None = None) -> FastAPI:
         return [Company(**c) for c in service(request).companies()]
 
     @app.get("/benchmark")
-    def benchmark(split: Literal["dev", "test"] = "dev") -> dict[str, Any]:
+    def benchmark(split: Literal["dev", "test", "dev_rapide"] = "dev") -> dict[str, Any]:
         """Dernier tableau d'ablation produit par `poe eval-report`."""
         path = REPORTS_DIR / f"ablation-{split}.json"
         if not path.exists():

@@ -8,7 +8,8 @@ from qdrant_client import QdrantClient
 
 from ledger_agent.agent.graph import FinancialAgent
 from ledger_agent.agent.nodes import AgentConfig, AgentRuntime
-from ledger_agent.agent.prompts import prompts_sha
+from ledger_agent.agent.prompts import agent_code_sha, prompts_sha
+from ledger_agent.agent.react import ReactAgent, ReactConfig
 from ledger_agent.baselines.naive_rag import PROMPT_SHA, NaiveRAG
 from ledger_agent.config import Settings
 from ledger_agent.evaluation.config import JudgeConfig, LLMConfig, RetrievalConfig, RunConfig
@@ -87,12 +88,14 @@ def build_retriever(config: RetrievalConfig, settings: Settings, stack: ExitStac
 
 
 def pipeline_prompt_sha(config: RunConfig) -> str:
-    return prompts_sha() if config.pipeline == "agent" else PROMPT_SHA
+    # Pour l'agent, l'empreinte couvre aussi son code : modifier le graphe ou les outils
+    # interdit de reprendre une évaluation commencée avec l'ancienne version
+    return f"{prompts_sha()}-{agent_code_sha()}" if config.pipeline == "agent" else PROMPT_SHA
 
 
 def build_agent(
     config: RunConfig, settings: Settings, retriever: Retriever, stack: ExitStack
-) -> FinancialAgent:
+) -> FinancialAgent | ReactAgent:
     agent = config.agent
     if agent is None:
         raise ValueError("section [agent] manquante")
@@ -100,6 +103,22 @@ def build_agent(
     if agent.use_xbrl:
         facts = FactStore.open(settings.data_dir / "processed" / "facts.duckdb")
         stack.callback(facts.close)
+    if agent.mode == "react":
+        return ReactAgent(
+            llm=build_llm(config.llm, settings, stack),
+            search=SearchFilingsTool(retriever),
+            facts=facts,
+            config=ReactConfig(
+                use_xbrl=agent.use_xbrl,
+                use_verifier=agent.use_verifier,
+                max_steps=agent.max_steps,
+                passages_per_search=agent.passages_per_query,
+                max_answer_attempts=agent.max_synthesis_attempts,
+            ),
+            params=config.llm.params(),
+        )
+    if agent.planner_llm is None:
+        raise ValueError("le mode « workflow » exige [agent.planner_llm]")
     runtime = AgentRuntime(
         planner_llm=build_llm(agent.planner_llm, settings, stack),
         writer_llm=build_llm(config.llm, settings, stack),

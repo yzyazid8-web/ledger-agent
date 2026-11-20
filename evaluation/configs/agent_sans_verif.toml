@@ -1,18 +1,16 @@
-# Ablation : agent complet SANS le vérificateur de chiffres.
-# Mesure ce que la vérification apporte : moins de réponses fausses, ou seulement plus d'abstentions ?
-# Tout le reste est identique à agent.toml.
+# Ablation : agent ReAct SANS la vérification des chiffres.
 
 name = "agent_sans_verif"
 pipeline = "agent"
 
-# L'agent transmet lui-même les filtres (entreprise, exercice) à l'outil de recherche
+# L'agent choisit lui-même les filtres (entreprise, exercice) de chaque recherche
 [retrieval]
 mode = "hybrid"
 filters = "none"
 lexical_weight = 0.5
 candidates = 30
 
-# Modèle qui rédige la réponse finale
+# Modèle qui pilote la boucle : choix des outils, lecture des résultats, réponse
 [llm]
 provider = "groq"
 model = "openai/gpt-oss-120b"
@@ -22,22 +20,12 @@ reasoning_effort = "low"
 tokens_per_minute = 8000
 
 [agent]
+mode = "react"
 use_xbrl = true
-use_grader = true
 use_verifier = false
-max_search_rounds = 2
+max_steps = 8
 passages_per_query = 3
-max_passages = 8
 max_synthesis_attempts = 2
-
-# Petit modèle pour planifier et juger : son quota Groq est séparé de celui du rédacteur
-[agent.planner_llm]
-provider = "groq"
-model = "openai/gpt-oss-20b"
-max_tokens = 1000
-temperature = 0.0
-reasoning_effort = "low"
-tokens_per_minute = 8000
 
 [judge]
 provider = "gemini"

@@ -1,8 +1,8 @@
-# Ablation : agent complet SANS le juge de suffisance (une seule passe de recherche).
-# Mesure l'apport des recherches supplémentaires déclenchées par le juge.
-# Tout le reste est identique à agent.toml.
+# Workflow agentique : graphe d'étapes fixes (planifier, collecter, juger la suffisance,
+# synthétiser, vérifier). Le LLM décide à l'intérieur de chaque étape, pas de leur enchaînement.
+# Sert de point de comparaison avec l'agent ReAct (agent.toml).
 
-name = "agent_sans_juge"
+name = "workflow"
 pipeline = "agent"
 
 # L'agent transmet lui-même les filtres (entreprise, exercice) à l'outil de recherche
@@ -22,8 +22,9 @@ reasoning_effort = "low"
 tokens_per_minute = 8000
 
 [agent]
+mode = "workflow"
 use_xbrl = true
-use_grader = false
+use_grader = true
 use_verifier = true
 max_search_rounds = 2
 passages_per_query = 3
