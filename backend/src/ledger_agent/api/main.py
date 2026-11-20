@@ -8,7 +8,7 @@ import json
 import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,9 +16,11 @@ from fastapi.responses import StreamingResponse
 
 from ledger_agent.api.schemas import AnswerResponse, ChatRequest, Company, Health
 from ledger_agent.api.service import AgentService, LocalAgentService
-from ledger_agent.config import get_settings
+from ledger_agent.config import REPO_ROOT, get_settings
 
 logger = logging.getLogger(__name__)
+
+REPORTS_DIR = REPO_ROOT / "evaluation" / "reports"
 
 ServiceFactory = Callable[[], AgentService]
 
@@ -66,6 +68,15 @@ def create_app(service_factory: ServiceFactory | None = None) -> FastAPI:
     @app.get("/companies", response_model=list[Company])
     def companies(request: Request) -> list[Company]:
         return [Company(**c) for c in service(request).companies()]
+
+    @app.get("/benchmark")
+    def benchmark(split: Literal["dev", "test"] = "dev") -> dict[str, Any]:
+        """Dernier tableau d'ablation produit par `poe eval-report`."""
+        path = REPORTS_DIR / f"ablation-{split}.json"
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Aucun rapport d'ablation pour ce jeu")
+        report: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        return report
 
     @app.post("/chat")
     def chat(body: ChatRequest, request: Request) -> StreamingResponse:

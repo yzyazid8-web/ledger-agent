@@ -2,11 +2,13 @@
 
 import json
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from ledger_agent.api import main as api_main
 from ledger_agent.api.main import create_app, sse
 
 STEPS = [
@@ -106,3 +108,15 @@ def test_sse_format_handles_non_ascii_text() -> None:
     assert sse({"type": "step", "node": "plan", "note": "élargi"}) == (
         'event: step\ndata: {"type": "step", "node": "plan", "note": "élargi"}\n\n'
     )
+
+
+def test_benchmark_serves_the_ablation_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(api_main, "REPORTS_DIR", tmp_path)
+    (tmp_path / "ablation-dev.json").write_text('{"split": "dev", "rows": []}', encoding="utf-8")
+    client, _ = client_for([])
+    with client:
+        assert client.get("/benchmark").json() == {"split": "dev", "rows": []}
+        assert client.get("/benchmark?split=test").status_code == 404
+        assert client.get("/benchmark?split=all").status_code == 422
