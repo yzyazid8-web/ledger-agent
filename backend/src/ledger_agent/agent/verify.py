@@ -35,7 +35,19 @@ def _source_values(
             values += list(mention.variants(allow_unscaled=True))
     for result in results:
         values += [abs(result.value), abs(result.value) / 100]
+        # Les constantes d'une formule (le « 100 » d'un pourcentage) peuvent être recopiées
+        values += formula_literals(result.expression)
     return values
+
+
+# Seules constantes admises en clair dans une formule ; tout autre nombre est une entrée sourcée
+FORMULA_CONSTANTS = frozenset({*range(13), 100, 360, 365, 1000, 1e6, 1e9})
+# Nombre isolé, pas un morceau de nom de variable comme capex_2018
+_LITERAL = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?:[eE][+-]?\d+)?(?![\w.])")
+
+
+def formula_literals(expression: str) -> list[float]:
+    return [float(n) for n in _LITERAL.findall(expression)]
 
 
 def _skippable(mention: NumberMention) -> bool:

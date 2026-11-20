@@ -28,6 +28,7 @@ const TOOL_NAMES: Record<string, string> = {
 function Detail({ step }: { step: StepEvent }) {
   switch (step.node) {
     case "agent": {
+      if (step.error) return <p className="text-warn">Appel d&apos;outil mal formé, l&apos;agent réessaie.</p>;
       const actions = asList(step.actions);
       return actions.length ? (
         <ul className="space-y-1">
@@ -129,13 +130,24 @@ function Detail({ step }: { step: StepEvent }) {
   }
 }
 
+// Soumettre la réponse ou s'abstenir n'a pas de résultat à montrer : la décision suffit
+const FINAL_TOOLS = new Set(["submit_answer", "abstain"]);
+
+function visible(steps: StepEvent[]): StepEvent[] {
+  return steps.flatMap((step) => {
+    if (step.node !== "tool") return [step];
+    const results = asList(step.results).filter((r) => !FINAL_TOOLS.has(String(r.tool)));
+    return results.length ? [{ ...step, results }] : [];
+  });
+}
+
 export function AgentTrace({ steps, running }: { steps: StepEvent[]; running: boolean }) {
   if (!steps.length && !running) {
     return <p className="text-sm text-muted">Le raisonnement de l&apos;agent s&apos;affichera ici, étape par étape.</p>;
   }
   return (
     <ol className="relative space-y-3 border-l border-line pl-4">
-      {steps.map((step, i) => (
+      {visible(steps).map((step, i) => (
         <li key={i} className="rise">
           <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full bg-accent" />
           <div className="flex items-baseline justify-between gap-2">

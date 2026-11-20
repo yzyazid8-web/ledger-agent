@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ledger_agent.agent.evidence import Evidence, fact_evidence, passage_evidence
-from ledger_agent.agent.verify import input_matches_evidence
+from ledger_agent.agent.verify import FORMULA_CONSTANTS, formula_literals, input_matches_evidence
 from ledger_agent.tools.calculator import CalculationError, CalculationResult, calculate
 from ledger_agent.tools.financial_facts import VALID_PERIODS, FactStore
 from ledger_agent.tools.search_filings import SearchFilingsTool
@@ -35,7 +35,6 @@ def _function(
                 "type": "object",
                 "properties": properties,
                 "required": required,
-                "additionalProperties": False,
             },
         },
     }
@@ -223,6 +222,13 @@ class Toolbox:
 
     def _calculate(self, expression: str, inputs: dict[str, Any]) -> dict[str, Any]:
         by_id = {e.id: e for e in self.evidence}
+        # Un chiffre écrit en clair dans la formule échapperait au contrôle des sources
+        smuggled = [n for n in formula_literals(expression) if n not in FORMULA_CONSTANTS]
+        if smuggled:
+            return {
+                "error": f"les nombres {smuggled} doivent être passés en entrées (inputs) avec "
+                "leur source E<n> ou C<n>, pas écrits dans la formule"
+            }
         variables: dict[str, float] = {}
         for name, source in inputs.items():
             if not isinstance(source, dict) or "source" not in source or "value" not in source:

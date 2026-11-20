@@ -15,6 +15,7 @@ from ledger_agent.llm.types import (
     LLMError,
     LLMQuotaError,
     LLMResponse,
+    LLMToolCallError,
     Message,
     ToolCall,
 )
@@ -26,6 +27,15 @@ RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 MAX_BACKOFF_SECONDS = 60.0
 # Approximation classique pour l'anglais : 1 token ≈ 4 caractères
 CHARS_PER_TOKEN = 4
+
+
+def _tool_error_message(response: httpx.Response) -> str:
+    # Groq valide les arguments contre le schéma de l'outil et renvoie la raison du refus
+    try:
+        message = str(response.json()["error"]["message"])
+    except (ValueError, KeyError, TypeError):
+        message = response.text
+    return sanitize(message)[:500]
 
 
 def estimate_tokens(
@@ -91,7 +101,7 @@ class OpenAICompatibleClient:
             body["response_format"] = {"type": "json_object"}
         if params.tools:
             body["tools"] = list(params.tools)
-            body["tool_choice"] = "auto"
+            body["tool_choice"] = params.tool_choice
         return body
 
     def _raise_if_quota_exhausted(self, response: httpx.Response) -> None:
@@ -134,6 +144,8 @@ class OpenAICompatibleClient:
                     attempt, response.headers.get("retry-after"), str(response.status_code)
                 )
                 continue
+            if response.status_code == 400 and "tool_use_failed" in response.text:
+                raise LLMToolCallError(_tool_error_message(response))
             if response.is_error:
                 raise LLMError(f"HTTP {response.status_code} : {sanitize(response.text)}")
 
