@@ -33,7 +33,12 @@ logger = logging.getLogger(__name__)
 
 def build_llm(config: LLMConfig, settings: Settings, stack: ExitStack) -> LLMClient:
     key = settings.groq_api_key.get_secret_value() if settings.groq_api_key else ""
-    client = OpenAICompatibleClient(key, config.model, tokens_per_minute=config.tokens_per_minute)
+    client = OpenAICompatibleClient(
+        key,
+        config.model,
+        tokens_per_minute=config.tokens_per_minute,
+        force_ipv4=settings.force_ipv4,
+    )
     stack.callback(client.close)
     cached = CachedLLM(client, settings.data_dir / "cache" / "llm.sqlite")
     stack.callback(cached.close)

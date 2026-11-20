@@ -187,3 +187,10 @@ def test_error_messages_hide_account_identifiers() -> None:
 def test_blocked_or_truncated_gemini_answers_raise_llm_error(payload: dict[str, object]) -> None:
     with pytest.raises(LLMError):
         parse_response(payload, "gemini", 0.1)
+
+
+def test_force_ipv4_binds_the_transport_to_an_ipv4_address() -> None:
+    client = OpenAICompatibleClient("key", "m", tokens_per_minute=None, force_ipv4=True)
+
+    pool = client._client._transport._pool  # type: ignore[attr-defined]
+    assert pool._local_address == "0.0.0.0"

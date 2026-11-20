@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from ledger_agent.config import Settings
-from ledger_agent.evaluation import compare, predict, runs, scoring
+from ledger_agent.evaluation import compare, predict, report, runs, scoring
 from ledger_agent.evaluation.config import RunConfig
 from ledger_agent.evaluation.dataset import EvidencePage, Question
 from ledger_agent.evaluation.judge import Verdict
@@ -83,6 +83,7 @@ def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[st
 
     monkeypatch.setattr(runs, "EVAL_DIR", tmp_path)
     monkeypatch.setattr(compare, "EVAL_DIR", tmp_path)
+    monkeypatch.setattr(report, "EVAL_DIR", tmp_path)
     monkeypatch.setattr(predict, "get_settings", lambda: settings)
     monkeypatch.setattr(predict, "load_split_questions", lambda split: QUESTIONS)
     monkeypatch.setattr(predict, "build_pipeline", fake_build_pipeline)
@@ -133,3 +134,21 @@ def test_compare_requires_same_questions_then_reports_mcnemar(sandbox: dict[str,
     assert (report["won_by_b"], report["won_by_a"]) == (2, 0)
     assert report["significant"] is False
     assert compare.report_path("alpha", "beta", "dev").exists()
+
+
+def test_ablation_report_compares_only_complete_runs(sandbox: dict[str, Any]) -> None:
+    sandbox["pipeline"] = FakePipeline(set(), set(), wrong_ids={"q1", "q2"})
+    scoring.score_run(predict.run_predictions(make_config("naive"), "dev"))
+    sandbox["pipeline"] = FakePipeline(set(), set(), wrong_ids=set())
+    scoring.score_run(predict.run_predictions(make_config("hybrid"), "dev"))
+    # L'agent n'a traité que 2 questions sur 4 : ses comparaisons restent en attente
+    scoring.score_run(predict.run_predictions(make_config("agent"), "dev", limit=2))
+
+    result = report.build_report("dev")
+
+    assert [r["config"] for r in result["rows"]] == ["naive", "hybrid", "agent"]
+    by_pair = {(c["a"], c["b"]): c for c in result["comparisons"]}
+    assert by_pair[("naive", "hybrid")]["won_by_b"] == 2
+    assert by_pair[("hybrid", "agent")]["status"].startswith("en attente")
+    markdown = report.report_markdown(result)
+    assert "| `agent` | 2/4 ⚠️ |" in markdown

@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     data_dir: Path = REPO_ROOT / "data"
     log_level: str = "INFO"
 
+    # Réseau : certaines routes IPv6 vers les fournisseurs de LLM sont cassées ;
+    # FORCE_IPV4=true fait passer les appels LLM par IPv4
+    force_ipv4: bool = False
+
     @field_validator("data_dir", mode="before")
     @classmethod
     def _empty_data_dir_uses_default(cls, value: object) -> object:

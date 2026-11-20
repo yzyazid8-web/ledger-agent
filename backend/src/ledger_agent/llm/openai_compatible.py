@@ -38,9 +38,13 @@ class OpenAICompatibleClient:
         timeout: float = 120.0,
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        force_ipv4: bool = False,
     ) -> None:
         if not api_key:
             raise ValueError(f"Clé d'API manquante pour le modèle {model}")
+        if transport is None and force_ipv4:
+            # Se lier à une adresse locale IPv4 oblige la connexion à passer par IPv4
+            transport = httpx.HTTPTransport(local_address="0.0.0.0")
         self._model = model
         self._max_retries = max_retries
         self._sleep = sleep

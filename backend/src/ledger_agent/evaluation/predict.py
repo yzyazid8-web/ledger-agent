@@ -91,7 +91,8 @@ def run_predictions(config: RunConfig, split: Split, limit: int | None = None) -
         split,
         [q.id for q in full],
         settings,
-        expected=len(selected),
+        # Un essai avec --limit reste « incomplet » : il ne doit pas passer pour une exécution finie
+        expected=len(full),
         prompt_sha=pipeline_prompt_sha(config),
     )
     predictions_path = run_dir / PREDICTIONS_FILE
