@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "bm25s>=0.3.16",
     "duckdb>=1.1",
+    "fastapi>=0.165.0",
     "fastembed>=0.9.1",
     "httpx>=0.28",
     "langgraph>=1.2.22",
@@ -15,6 +16,7 @@ dependencies = [
     "pymupdf>=2.1",
     "pystemmer>=3.1.0",
     "qdrant-client>=1.20.0",
+    "uvicorn>=0.54.0",
 ]
 
 [dependency-groups]
@@ -50,6 +52,7 @@ eval-score = "python -m ledger_agent.evaluation score"
 eval-retrieval = "python -m ledger_agent.evaluation retrieval"
 eval-compare = "python -m ledger_agent.evaluation compare"
 eval-report = "python -m ledger_agent.evaluation report"
+api = "uvicorn ledger_agent.api.main:app --port 8000"
 
 [tool.ruff]
 line-length = 100

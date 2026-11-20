@@ -336,3 +336,26 @@ def test_a_calculation_can_reuse_an_earlier_result() -> None:
 
     assert problems == []
     assert round(results["turnover"].value, 2) == 6.25
+
+
+def test_stream_emits_each_step_then_a_displayable_answer() -> None:
+    agent, _, _, _ = make_agent([GOOD_SYNTHESIS])
+
+    events = list(agent.stream(QUESTION))
+
+    assert [e.get("node") for e in events[:-1]] == [
+        "plan",
+        "gather",
+        "grade",
+        "synthesize",
+        "verify",
+    ]
+    answer = events[-1]
+    assert answer["type"] == "answer"
+    assert answer["final_answer"] == "$1,577 million"
+    assert answer["cited"] == ["E1", "E2"]
+    # Chaque preuve est prête à afficher, avec sa source et sa page
+    first, second = answer["evidence"][:2]
+    assert first["kind"] == "xbrl" and first["value"] == 1577000000
+    assert (second["doc_name"], second["page_number"]) == ("3M_2018_10K", 60)
+    assert answer["calculations"][0]["name"] == "capex_musd"
