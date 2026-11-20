@@ -9,10 +9,18 @@ from pathlib import Path
 
 from ledger_agent.llm.types import CompletionParams, LLMClient, LLMResponse, Message
 
+# Champs ajoutés pour l'appel d'outils : à leur valeur par défaut, ils sont omis de la clé
+# pour que les appels sans outils retrouvent les entrées déjà en cache
+_OMITTED_WHEN_DEFAULT = {"tools": (), "tool_choice": "auto"}
+
 
 def cache_key(model: str, messages: list[Message], params: CompletionParams) -> str:
+    fields = asdict(params)
+    for name, default in _OMITTED_WHEN_DEFAULT.items():
+        if fields.get(name) == default:
+            fields.pop(name)
     raw = json.dumps(
-        {"model": model, "messages": messages, "params": asdict(params)},
+        {"model": model, "messages": messages, "params": fields},
         sort_keys=True,
         ensure_ascii=False,
     )

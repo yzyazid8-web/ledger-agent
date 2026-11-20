@@ -1,6 +1,7 @@
 """Agent ReAct : le LLM choisit ses outils, lit leurs résultats et décide de la suite."""
 
 import json
+import re
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -12,19 +13,27 @@ from ledger_agent.agent.graph import answer_event, pipeline_answer
 from ledger_agent.agent.react_prompts import (
     BUDGET_EXHAUSTED,
     NO_TOOL_CALLED,
+    invalid_tool_call,
     react_system_prompt,
     verification_failed,
 )
 from ledger_agent.agent.toolbox import TERMINAL_TOOLS, Toolbox
 from ledger_agent.agent.verify import verify_numbers
 from ledger_agent.answer_format import ABSTAIN_MARKER
-from ledger_agent.llm.types import CompletionParams, LLMClient, LLMResponse, Message
+from ledger_agent.llm.types import (
+    CompletionParams,
+    LLMClient,
+    LLMResponse,
+    LLMToolCallError,
+    Message,
+)
 from ledger_agent.pipeline import PipelineAnswer
 from ledger_agent.tools.financial_facts import FactStore
 from ledger_agent.tools.search_filings import SearchFilingsTool
 
 RECURSION_LIMIT = 60
 ARGUMENT_PREVIEW_CHARS = 200
+EVIDENCE_ID = re.compile(r"E\d+")
 
 
 def _concat(left: list[Any], right: list[Any]) -> list[Any]:
@@ -37,6 +46,7 @@ class ReactState(TypedDict, total=False):
     pending: list[dict[str, Any]]
     steps: int
     attempts: int
+    force_tool: bool
     submitted: dict[str, Any] | None
     text: str
     abstained: bool
@@ -115,8 +125,22 @@ class ReactAgent:
                 temperature=self._params.temperature,
                 reasoning_effort=self._params.reasoning_effort,
                 tools=box.definitions(final_only=exhausted),
+                # Après une réponse en texte libre, ou au dernier tour, un appel d'outil est
+                # imposé : le modèle doit soumettre sa réponse au lieu de la rédiger hors outil
+                tool_choice="required" if exhausted or state.get("force_tool") else "auto",
             )
-            response = llm.complete(messages, params)
+            try:
+                response = llm.complete(messages, params)
+            except LLMToolCallError as exc:
+                # Appel mal formé refusé par le fournisseur : le modèle est prévenu et réessaie,
+                # dans la limite du budget d'étapes
+                messages.append({"role": "user", "content": invalid_tool_call(str(exc))})
+                return {
+                    "messages": messages,
+                    "pending": [],
+                    "steps": steps + 1,
+                    "trace": _event("agent", started, step=steps + 1, actions=[], error=str(exc)),
+                }
             calls = response.tool_calls
             if calls:
                 messages.append(
@@ -131,6 +155,7 @@ class ReactAgent:
                 "messages": messages,
                 "pending": [dict(c) for c in calls],
                 "steps": steps + 1,
+                "force_tool": not calls,
                 "llm_calls": [response],
                 "trace": _event(
                     "agent",
@@ -184,9 +209,13 @@ class ReactAgent:
                     "abstained": True,
                     "cited": [],
                 }
-            answer = str(submitted.get("answer", ""))
+            answer = str(submitted.get("answer", "")).rstrip()
             final = str(submitted.get("final_answer", ""))
             cited = [str(c) for c in submitted.get("cited", []) if isinstance(c, str)]
+            # Une source citée doit apparaître dans le texte, où l'interface la rend cliquable
+            missing = [c for c in cited if EVIDENCE_ID.fullmatch(c) and c not in answer]
+            if missing:
+                answer += " " + " ".join(f"[{c}]" for c in missing)
             return {
                 "text": f"{answer}\n\nFinal answer: {final}",
                 "abstained": False,
@@ -198,7 +227,8 @@ class ReactAgent:
             if state.get("abstained"):
                 return {"trace": _event("verify", started, skipped="abstention")}
             check = verify_numbers(state["text"], box.evidence, list(box.calculations.values()))
-            known = {e.id for e in box.evidence}
+            # Citer un calcul (C1) est aussi légitime que citer une preuve (E1)
+            known = {e.id for e in box.evidence} | set(box.calculations)
             problems = [f"untraceable number {n}" for n in check.unverified] + [
                 f"unknown citation {c}" for c in state.get("cited", []) if c not in known
             ]

@@ -9,7 +9,13 @@ from ledger_agent.agent.evidence import Evidence
 from ledger_agent.agent.react import ReactAgent, ReactConfig
 from ledger_agent.agent.toolbox import Toolbox
 from ledger_agent.agent.verify import verify_numbers
-from ledger_agent.llm.types import CompletionParams, LLMResponse, Message, ToolCall
+from ledger_agent.llm.types import (
+    CompletionParams,
+    LLMResponse,
+    LLMToolCallError,
+    Message,
+    ToolCall,
+)
 from ledger_agent.tools.calculator import calculate
 from ledger_agent.tools.search_filings import SearchFilingsTool
 
@@ -25,10 +31,11 @@ def call(name: str, **arguments: Any) -> ToolCall:
 class ToolScriptLLM:
     """Faux LLM : chaque appel renvoie l'étape suivante du scénario."""
 
-    def __init__(self, script: list[list[ToolCall] | str]) -> None:
+    def __init__(self, script: list[Any]) -> None:
         self.script = script
         self.seen: list[list[Message]] = []
         self.tools_offered: list[list[str]] = []
+        self.choices: list[str] = []
 
     @property
     def model(self) -> str:
@@ -37,7 +44,10 @@ class ToolScriptLLM:
     def complete(self, messages: list[Message], params: CompletionParams) -> LLMResponse:
         self.seen.append(list(messages))
         self.tools_offered.append([t["function"]["name"] for t in params.tools])
+        self.choices.append(params.tool_choice)
         step = self.script.pop(0) if self.script else "rien"
+        if isinstance(step, Exception):
+            raise step
         if isinstance(step, str):
             return LLMResponse(text=step, model="fake", prompt_tokens=50)
         return LLMResponse(text="", model="fake", prompt_tokens=50, tool_calls=step)
@@ -66,7 +76,7 @@ GOOD_RUN: list[list[ToolCall] | str] = [
 
 
 def make_agent(
-    script: list[list[ToolCall] | str], config: ReactConfig | None = None
+    script: list[Any], config: ReactConfig | None = None
 ) -> tuple[ReactAgent, ToolScriptLLM]:
     llm = ToolScriptLLM(script)
     agent = ReactAgent(
@@ -137,6 +147,25 @@ def test_step_budget_ends_in_abstention() -> None:
     assert answer.abstained
     # Au dernier tour, seuls les outils de fin sont proposés
     assert llm.tools_offered[-1] == ["submit_answer", "abstain"]
+
+
+def test_cited_evidence_missing_from_the_text_is_appended() -> None:
+    script = [
+        *GOOD_RUN[:2],
+        [
+            call(
+                "submit_answer",
+                answer="Capex was $1,577 million.",
+                final_answer="$1,577 million",
+                cited=["E1"],
+            )
+        ],
+    ]
+    agent, _ = make_agent(script)
+
+    answer = agent.run(QUESTION)
+
+    assert "Capex was $1,577 million. [E1]" in answer.text
 
 
 def test_abstain_tool_ends_the_run() -> None:
@@ -221,3 +250,76 @@ def test_a_negative_result_presented_as_an_increase_is_rejected() -> None:
     assert verify_numbers("Capex rose by 12.94% [E1].", evidence, results).unverified
     assert not verify_numbers("Capex declined by 12.94%.", evidence, results).unverified
     assert not verify_numbers("Capex changed by -12.94%.", evidence, results).unverified
+
+
+def test_a_malformed_tool_call_is_reported_to_the_model_instead_of_crashing() -> None:
+    rejected = LLMToolCallError("missing properties: 'answer'")
+    agent, llm = make_agent([rejected, *GOOD_RUN])
+
+    answer = agent.run(QUESTION)
+
+    assert "$1,577 million" in answer.text
+    assert "malformed" in (llm.seen[1][-1]["content"] or "")
+
+
+def test_citing_a_calculation_and_its_formula_constants_is_accepted() -> None:
+    growth = [
+        call("get_fact", ticker="MMM", concept=CAPEX, fiscal_year=2018),
+        call(
+            "calculate",
+            expression="a / b * 100",
+            inputs={
+                "a": {"source": "E1", "value": 1577000000},
+                "b": {"source": "E1", "value": 1577000000},
+            },
+        ),
+    ]
+    submit = call(
+        "submit_answer",
+        answer="Capex [E1] divided by itself times 100 gives 100 [C1].",
+        final_answer="100%",
+        cited=["E1", "C1"],
+    )
+    agent, _ = make_agent([[growth[0]], [growth[1]], [submit]])
+
+    answer = agent.run(QUESTION)
+
+    assert not answer.abstained
+    assert "verify" in [t["node"] for t in answer.trace]
+
+
+def test_a_free_text_answer_forces_a_tool_call_on_the_next_turn() -> None:
+    agent, llm = make_agent(["Capex was $1,577 million.", *GOOD_RUN])
+
+    answer = agent.run(QUESTION)
+
+    assert llm.choices[:2] == ["auto", "required"]
+    assert "$1,577 million" in answer.text
+
+
+def test_the_last_turn_requires_submitting_or_abstaining() -> None:
+    looping = [[call("search_filings", query="capex")] for _ in range(10)]
+    agent, llm = make_agent(looping, ReactConfig(max_steps=2))
+
+    agent.run(QUESTION)
+
+    assert llm.choices[-1] == "required"
+
+
+def test_numbers_written_inside_a_formula_are_refused_but_constants_allowed() -> None:
+    box = Toolbox(SearchFilingsTool(StaticRetriever()), fact_store())
+    box.execute("get_fact", json.dumps({"ticker": "MMM", "concept": CAPEX, "fiscal_year": 2018}))
+
+    smuggled = box.execute("calculate", json.dumps({"expression": "6043 - 3694", "inputs": {}}))
+    named = box.execute(
+        "calculate",
+        json.dumps(
+            {
+                "expression": "capex_2018 / 1000000 * 100",
+                "inputs": {"capex_2018": {"source": "E1", "value": 1577000000}},
+            }
+        ),
+    )
+
+    assert "inputs" in smuggled["error"]
+    assert named["value"] == 157700.0

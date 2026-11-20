@@ -20,9 +20,10 @@ Work step by step: decide which tool to call, read its result, then decide the n
   (E<n> for evidence, C<n> for an earlier calculation) with the exact value shown there.
 - Read every result: if a tool returns an error or nothing useful, try another query, concept,
   year or period.
-- When the evidence is sufficient, call submit_answer: a short reasoning citing evidence like
-  [E1], and a concise final_answer. Every number you write must appear in the evidence or in a
-  calculation result, with the right sign.
+- When the evidence is sufficient, call submit_answer: a short reasoning that cites the evidence
+  right after each fact it uses (e.g. "capex was $1,577 million [E1]"), and a concise
+  final_answer. Every number you write must appear in the evidence or in a calculation result,
+  with the right sign.
 - If the information is not available after a reasonable search, call abstain.
 You have at most {max_steps} turns of tool calls."""
 
@@ -40,4 +41,11 @@ def verification_failed(problems: list[str]) -> str:
         + "; ".join(problems)
         + ". Fix it: search or calculate what is missing, then call submit_answer again. "
         "Every number must come from the evidence or a calculation result."
+    )
+
+
+def invalid_tool_call(reason: str) -> str:
+    return (
+        f"Your last tool call was rejected as malformed: {reason}. "
+        "Call the tool again with exactly the documented arguments."
     )

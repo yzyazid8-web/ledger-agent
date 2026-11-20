@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import type { Company } from "@/lib/types";
 
+// Questions en plusieurs étapes en tête : on y voit l'agent enchaîner faits, calcul et vérification
 export const EXAMPLES = [
+  "By how much did 3M's capital expenditure change between FY2017 and FY2018, in percent?",
   "What was 3M's capital expenditure in FY2018?",
   "What is Kraft Heinz's FY2019 inventory turnover ratio?",
   "Does 3M have a healthy quick ratio as of Q2 FY2023?",

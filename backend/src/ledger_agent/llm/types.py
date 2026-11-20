@@ -34,6 +34,8 @@ class CompletionParams:
     json_mode: bool = False
     # Définitions d'outils au format OpenAI (type « function ») ; vide = aucun outil proposé
     tools: tuple[dict[str, Any], ...] = ()
+    # "required" oblige le modèle à appeler un outil plutôt qu'à répondre en texte libre
+    tool_choice: Literal["auto", "required"] = "auto"
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +63,10 @@ class LLMClient(Protocol):
 
 class LLMError(RuntimeError):
     """Levée quand le fournisseur échoue après toutes les relances."""
+
+
+class LLMToolCallError(LLMError):
+    """Appel d'outil mal formé, refusé par le fournisseur : le modèle peut se corriger."""
 
 
 class LLMQuotaError(LLMError):
