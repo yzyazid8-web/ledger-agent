@@ -1,0 +1,55 @@
+name: Déploiement Azure
+
+# Après chaque publication réussie des images sur main, les deux applications Azure
+# passent sur les images de ce commit. Lançable aussi à la main depuis l'onglet Actions.
+on:
+  workflow_run:
+    workflows: ["Images Docker"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      # Connexion sans mot de passe (OIDC) : aucun secret Azure de longue durée dans GitHub
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Mettre à jour les images
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          az containerapp update -g "$RESOURCE_GROUP" -n ledger-agent-api \
+            --image "ghcr.io/$OWNER/ledger-agent-api:$SHA" --output none
+          az containerapp update -g "$RESOURCE_GROUP" -n ledger-agent-web \
+            --image "ghcr.io/$OWNER/ledger-agent-web:$SHA" --output none
+        shell: bash
+
+      - name: Vérifier le site déployé
+        run: |
+          FQDN=$(az containerapp show -g "$RESOURCE_GROUP" -n ledger-agent-web \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          # Démarrage à froid possible : jusqu'à ~3 minutes d'attente
+          for i in $(seq 1 36); do
+            curl -fs "https://$FQDN/api/health" && exit 0
+            sleep 5
+          done
+          echo "Le site ne répond pas : https://$FQDN" && exit 1
+        shell: bash

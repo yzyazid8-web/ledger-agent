@@ -24,7 +24,7 @@ statistiques appariés et juge LLM validé.
 | 6 | API FastAPI : étapes de l'agent diffusées en direct (SSE) | ✅ |
 | 7 | Interface Next.js : raisonnement en direct, sources, origine de chaque chiffre | ✅ |
 | 8 | Images Docker construites, testées et publiées par la CI (GHCR) | ✅ |
-| 9 | Déploiement sur Azure Container Apps | ⏳ à venir |
+| 9 | Déploiement sur Azure Container Apps ([guide](docs/deploiement.md)) | 🔄 en cours |
 
 ## Ce qui fonctionne aujourd'hui
 
