@@ -33,6 +33,7 @@ data/
 .DS_Store
 Thumbs.db
 
-# Fichiers d'assistant
+# Fichiers d'assistant (AGENTS.md est recréé automatiquement par « next dev »)
 CLAUDE.md
 .claude/
+AGENTS.md
