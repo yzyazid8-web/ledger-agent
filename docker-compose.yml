@@ -1,0 +1,21 @@
+# Lance l'API et l'interface : docker compose up --build, puis http://localhost:3000
+# Prérequis : un fichier .env à la racine, et le snapshot de données extrait dans data-snapshot/
+#   cd backend && uv run python -m ledger_agent.snapshot extract <archive> --dest ../data-snapshot --sha256 <empreinte>
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    ports:
+      - "8000:8000"
+
+  web:
+    build: ./frontend
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api

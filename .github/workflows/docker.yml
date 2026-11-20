@@ -1,0 +1,126 @@
+name: Images Docker
+
+# Construit et teste les deux images à chaque PR ; les publie sur GHCR quand main change
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Récupérer et vérifier le snapshot de données
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(jq -r .tag data-snapshot.json)
+          ASSET=$(jq -r .asset data-snapshot.json)
+          SHA=$(jq -r .sha256 data-snapshot.json)
+          gh release download "$TAG" --pattern "$ASSET" --dir "$RUNNER_TEMP"
+          echo "$SHA  $RUNNER_TEMP/$ASSET" | sha256sum --check -
+          mkdir -p data-snapshot
+          tar -xzf "$RUNNER_TEMP/$ASSET" -C data-snapshot
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Construire l'image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          load: true
+          tags: ledger-agent-api:test
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Test de fumée (démarrage, santé, données)
+        run: |
+          # Clé factice : le test ne fait aucun appel au LLM
+          docker run -d --name api -p 8000:8000 -e GROQ_API_KEY=cle-factice ledger-agent-api:test
+          for i in $(seq 1 60); do curl -fs localhost:8000/health && break; sleep 2; done
+          curl -fs localhost:8000/health | jq -e '.ready == true'
+          curl -fs localhost:8000/companies | jq -e 'length == 32'
+        shell: bash
+
+      - name: Journal du conteneur en cas d'échec
+        if: failure()
+        run: docker logs api || true
+
+      - name: Se connecter à GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Publier l'image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ledger-agent-api:latest
+            ghcr.io/${{ github.repository_owner }}/ledger-agent-api:${{ github.sha }}
+          cache-from: type=gha,scope=api
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Construire l'image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          load: true
+          tags: ledger-agent-web:test
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Test de fumée (page d'accueil, relais sans API)
+        run: |
+          docker run -d --name web -p 3000:3000 ledger-agent-web:test
+          for i in $(seq 1 30); do curl -fs localhost:3000 >/dev/null && break; sleep 2; done
+          curl -fs localhost:3000 | grep -q "ledger-agent"
+          # Sans API derrière, le relais doit répondre proprement 502, pas planter
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/api/health)" = "502"
+        shell: bash
+
+      - name: Journal du conteneur en cas d'échec
+        if: failure()
+        run: docker logs web || true
+
+      - name: Se connecter à GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Publier l'image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ledger-agent-web:latest
+            ghcr.io/${{ github.repository_owner }}/ledger-agent-web:${{ github.sha }}
+          cache-from: type=gha,scope=web
