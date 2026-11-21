@@ -40,34 +40,30 @@ def _function(
     }
 
 
+# Descriptions courtes : elles sont renvoyées au modèle à chaque tour, et les tokens
+# comptent dans la limite de débit (8 000 par minute sur l'offre gratuite de Groq)
 SEARCH_FILINGS = _function(
     "search_filings",
-    "Search passages of the company's SEC filings (10-K, 10-Q, 8-K, earnings releases). "
-    "Use for qualitative information, segment details or tables. Returns passages with ids E<n>.",
+    "Search passages of SEC filings, for anything not in XBRL. Returns passages E<n>.",
     {
-        "query": {"type": "string", "description": "Short keyword query"},
-        "ticker": {"type": "string", "description": "Company ticker, e.g. MMM"},
-        "fiscal_year": {"type": "integer", "description": "Fiscal year of the filing to search"},
+        "query": {"type": "string"},
+        "ticker": {"type": "string"},
+        "fiscal_year": {"type": "integer"},
     },
     ["query"],
 )
 FIND_CONCEPTS = _function(
     "find_concepts",
-    "Find the official XBRL concept names a company uses for a line item (e.g. 'revenue', "
-    "'capital expenditure'). Call before get_fact.",
-    {
-        "label": {"type": "string", "description": "Plain English line item"},
-        "ticker": {"type": "string"},
-    },
+    "Find the XBRL concept names a company uses for a line item. Call before get_fact.",
+    {"label": {"type": "string"}, "ticker": {"type": "string"}},
     ["label", "ticker"],
 )
 GET_FACT = _function(
     "get_fact",
-    "Get the official reported value of an XBRL concept for a fiscal year (FY) or quarter "
-    "(Q1-Q4), as originally filed. Returns a fact with id E<n>.",
+    "Official XBRL value of a concept, as filed, in raw units. Returns a fact E<n>.",
     {
         "ticker": {"type": "string"},
-        "concept": {"type": "string", "description": "Exact concept name from find_concepts"},
+        "concept": {"type": "string"},
         "fiscal_year": {"type": "integer"},
         "fiscal_period": {"type": "string", "enum": list(VALID_PERIODS)},
     },
@@ -75,17 +71,12 @@ GET_FACT = _function(
 )
 CALCULATE = _function(
     "calculate",
-    "Compute an arithmetic expression. All arithmetic must go through this tool. Each input "
-    "must cite its source: an evidence id (E<n>) or an earlier calculation id (C<n>), with the "
-    "exact value shown there. Returns the result with id C<n>.",
+    "Evaluate an expression over named inputs, each citing its source E<n> or C<n> and the "
+    "exact value shown there. Returns a result C<n>.",
     {
-        "expression": {
-            "type": "string",
-            "description": "e.g. (capex_2018 - capex_2017) / capex_2017 * 100",
-        },
+        "expression": {"type": "string", "description": "e.g. (a - b) / b * 100"},
         "inputs": {
             "type": "object",
-            "description": "Variable name -> {source, value}",
             "additionalProperties": {
                 "type": "object",
                 "properties": {"source": {"type": "string"}, "value": {"type": "number"}},
@@ -97,18 +88,17 @@ CALCULATE = _function(
 )
 SUBMIT_ANSWER = _function(
     "submit_answer",
-    "Submit the final answer once the evidence is sufficient. Every number written must come "
-    "from the evidence or a calculation result. Cite evidence ids like [E1].",
+    "Submit the answer, citing evidence after each fact it uses.",
     {
-        "answer": {"type": "string", "description": "Short reasoning with citations [E<n>]"},
-        "final_answer": {"type": "string", "description": "The direct, concise answer"},
-        "cited": {"type": "array", "items": {"type": "string"}, "description": "Evidence ids used"},
+        "answer": {"type": "string"},
+        "final_answer": {"type": "string", "description": "Concise answer"},
+        "cited": {"type": "array", "items": {"type": "string"}},
     },
     ["answer", "final_answer", "cited"],
 )
 ABSTAIN = _function(
     "abstain",
-    "Give up when the filings and facts do not contain what is needed after reasonable search.",
+    "Give up when the information is not available.",
     {"reason": {"type": "string"}},
     ["reason"],
 )
