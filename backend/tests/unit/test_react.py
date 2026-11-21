@@ -354,3 +354,33 @@ def test_a_text_refusal_with_a_final_line_is_an_abstention() -> None:
     answer = agent.run(QUESTION)
 
     assert answer.abstained
+
+
+def test_uncited_numbers_get_the_citations_of_the_evidence_they_come_from() -> None:
+    uncited = call(
+        "submit_answer",
+        answer="Capex was $1,577 million.",
+        final_answer="$1,577 million",
+        cited=[],
+    )
+    agent, _ = make_agent([*GOOD_RUN[:2], [uncited]])
+
+    events = list(agent.stream(QUESTION))
+
+    assert events[-1]["cited"] == ["E1"]
+    assert "Capex was $1,577 million. [E1]" in events[-1]["text"]
+
+
+def test_escaped_newlines_written_by_the_model_are_restored() -> None:
+    escaped = call(
+        "submit_answer",
+        answer=r"Capex was $1,577 million [E1].\n\n",
+        final_answer=r"$1,577 million\n",
+        cited=["E1"],
+    )
+    agent, _ = make_agent([*GOOD_RUN[:2], [escaped]])
+
+    answer = agent.run(QUESTION)
+
+    assert r"\n" not in answer.text  # plus de « \n » écrit en toutes lettres
+    assert answer.text.endswith("Final answer: $1,577 million")

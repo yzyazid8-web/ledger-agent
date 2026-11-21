@@ -18,7 +18,7 @@ from ledger_agent.agent.react_prompts import (
     verification_failed,
 )
 from ledger_agent.agent.toolbox import TERMINAL_TOOLS, Toolbox
-from ledger_agent.agent.verify import verify_numbers
+from ledger_agent.agent.verify import evidence_for_numbers, verify_numbers
 from ledger_agent.answer_format import ABSTAIN_MARKER, extract_final_answer, is_abstention
 from ledger_agent.llm.types import (
     CompletionParams,
@@ -95,6 +95,11 @@ def _summary(name: str, observation: dict[str, Any]) -> str:
 
 _FINAL_MARKER = re.compile(r"final answer\s*:", re.IGNORECASE)
 _REFERENCE = re.compile(r"\b[EC]\d+\b")
+
+
+def _unescape(text: str) -> str:
+    # Séquences littérales « \n » (barre oblique inverse puis n), pas de vrais sauts de ligne
+    return text.replace(r"\r\n", "\n").replace(r"\n", "\n").replace(r"\t", " ")
 
 
 def text_submission(text: str) -> dict[str, Any] | None:
@@ -249,9 +254,14 @@ class ReactAgent:
                     "abstained": True,
                     "cited": [],
                 }
-            answer = str(submitted.get("answer", "")).rstrip()
-            final = str(submitted.get("final_answer", ""))
+            # Sauts de ligne échappés deux fois par le modèle (« \\n » écrit en toutes lettres)
+            answer = _unescape(str(submitted.get("answer", ""))).rstrip()
+            final = _unescape(str(submitted.get("final_answer", ""))).strip()
             cited = [str(c) for c in submitted.get("cited", []) if isinstance(c, str)]
+            if not any(EVIDENCE_ID.fullmatch(c) for c in cited):
+                # Le modèle n'a cité aucune preuve : on cite celles d'où viennent ses chiffres,
+                # selon la même correspondance que celle qui valide les chiffres au vérificateur
+                cited += evidence_for_numbers(f"{answer}\n{final}", box.evidence)
             # Une source citée doit apparaître dans le texte, où l'interface la rend cliquable
             missing = [c for c in cited if EVIDENCE_ID.fullmatch(c) and c not in answer]
             if missing:
