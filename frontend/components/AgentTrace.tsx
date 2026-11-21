@@ -35,7 +35,11 @@ function Detail({ step }: { step: StepEvent }) {
           {actions.map((a, i) => (
             <li key={i}>
               <b>{TOOL_NAMES[String(a.tool)] ?? String(a.tool)}</b>
-              <span className="ml-1 break-all font-mono text-[11px] text-muted">{JSON.stringify(a.args)}</span>
+              {(a.args as Dict | null)?.en_texte ? (
+                <span className="ml-1 text-muted">(rédigée directement, sans appel d&apos;outil)</span>
+              ) : (
+                <span className="ml-1 break-all font-mono text-[11px] text-muted">{JSON.stringify(a.args)}</span>
+              )}
             </li>
           ))}
         </ul>

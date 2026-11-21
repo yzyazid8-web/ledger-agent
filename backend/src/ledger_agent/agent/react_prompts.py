@@ -23,7 +23,8 @@ Work step by step: decide which tool to call, read its result, then decide the n
 - When the evidence is sufficient, call submit_answer: a short reasoning that cites the evidence
   right after each fact it uses (e.g. "capex was $1,577 million [E1]"), and a concise
   final_answer. Every number you write must appear in the evidence or in a calculation result,
-  with the right sign.
+  with the right sign. If you write the answer as plain text instead, end it with a line
+  "Final answer: <concise answer>".
 - If the information is not available after a reasonable search, call abstain.
 You have at most {max_steps} turns of tool calls."""
 
@@ -32,7 +33,10 @@ BUDGET_EXHAUSTED = (
     "Tool budget exhausted. Answer now with submit_answer using the evidence you have, "
     "or call abstain if it is not sufficient."
 )
-NO_TOOL_CALLED = "Use the tools. To finish, call submit_answer or abstain."
+NO_TOOL_CALLED = (
+    "Use the tools. To finish, call submit_answer or abstain, or write your answer ending "
+    'with "Final answer: ...".'
+)
 
 
 def verification_failed(problems: list[str]) -> str:
