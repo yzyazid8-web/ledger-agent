@@ -23,7 +23,8 @@ tokens_per_minute = 8000
 mode = "react"
 use_xbrl = false
 use_verifier = true
-max_steps = 8
+# 12 tours : 8 ne suffisaient pas aux questions qui demandent 3 ou 4 chiffres (réglé sur dev)
+max_steps = 12
 passages_per_query = 3
 max_synthesis_attempts = 2
 

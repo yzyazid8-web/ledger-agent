@@ -7,6 +7,7 @@ from ledger_agent.evaluation.metrics import (
     numeric_correct,
     page_hit,
 )
+from ledger_agent.numbers import parse_numbers
 
 
 @pytest.mark.parametrize(
@@ -95,3 +96,25 @@ def test_page_hit_and_citation_precision() -> None:
     assert not page_hit([("3M_2018_10K", 58)], gold)
     assert citation_precision([("3M_2018_10K", 59), ("3M_2018_10K", 1)], gold) == 0.5
     assert citation_precision([], gold) is None
+
+
+@pytest.mark.parametrize("text", ["79.82%", "79.82 %", "a ratio of 79.82%.", "79.82 percent"])
+def test_a_percent_sign_is_recognised_at_the_end_of_a_sentence(text: str) -> None:
+    # Défaut corrigé : un « % » final, sans mot derrière, était ignoré
+    (mention,) = parse_numbers(text)
+    assert mention.is_percent and mention.raw == 79.82
+
+
+@pytest.mark.parametrize(
+    ("gold", "prediction", "expected"),
+    [
+        ("0.8", "79.82%", True),
+        ("0.54", "54.03%", True),
+        ("0.8", "95%", False),
+        ("80%", "0.80", True),
+    ],
+)
+def test_a_ratio_and_the_same_value_as_a_percent_are_equivalent(
+    gold: str, prediction: str, expected: bool
+) -> None:
+    assert numeric_correct(gold, f"Final answer: {prediction}") is expected
