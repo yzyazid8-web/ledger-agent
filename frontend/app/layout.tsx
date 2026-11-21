@@ -6,10 +6,21 @@ import "./globals.css";
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
+const TITLE = "Ledger Agent : RAG agentique qui vérifie chaque chiffre financier";
+const DESCRIPTION =
+  "Agent ReAct sur les rapports SEC : il choisit ses outils (recherche dans les 10-K, données XBRL " +
+  "officielles, calculatrice), lit leurs résultats et vérifie la source de chaque chiffre avant de répondre.";
+
 export const metadata: Metadata = {
-  title: "ledger-agent",
-  description:
-    "Analyse financière sur les rapports SEC : chaque chiffre est relié à sa source, ou l'agent s'abstient.",
+  // Adresse publique, pour que l'image d'aperçu ait une URL absolue (sinon : localhost).
+  // La page est générée au build : SITE_URL se règle donc au moment de construire l'image
+  metadataBase: new URL(
+    process.env.SITE_URL ?? "https://ledger-agent-web.politebeach-befb1bc3.francecentral.azurecontainerapps.io",
+  ),
+  title: TITLE,
+  description: DESCRIPTION,
+  openGraph: { title: TITLE, description: DESCRIPTION, type: "website", locale: "fr_FR" },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -24,7 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               </span>
               ledger-agent
               <span className="hidden text-sm font-normal text-muted sm:inline">
-                · chiffres traçables sur les rapports SEC
+                · RAG agentique sur les rapports SEC, chaque chiffre vérifié
               </span>
             </Link>
             <nav className="flex gap-1 text-sm">

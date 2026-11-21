@@ -1,6 +1,7 @@
 import type { Calculation, Evidence } from "./types";
 
-// Découpe la réponse en morceaux : texte, citation [E3], ou nombre avec son origine
+// Découpe la réponse en morceaux : texte, citation d'une preuve (E3) ou d'un calcul (C1),
+// ou nombre avec son origine
 
 export type Provenance =
   | { kind: "calculation"; calculation: Calculation }
@@ -9,15 +10,23 @@ export type Provenance =
 export type Segment =
   | { kind: "text"; text: string }
   | { kind: "citation"; id: string }
+  | { kind: "calculation"; calculation: Calculation }
   | { kind: "number"; text: string; provenance: Provenance | null };
 
-// Citation entre crochets « [E3] », citation nue « E3 » (le modèle oublie parfois les crochets),
-// ou nombre. La citation nue passe avant le nombre : sinon « E3 » serait lu comme le nombre 3
-const TOKEN = /\[(E\d+)\]|\b(E\d+)\b|\$?\d[\d,]*(?:\.\d+)?%?/g;
+// Groupe de citations entre crochets, ordinaires ou asiatiques (gpt-oss écrit souvent « 【E1】 ») :
+// « [E1] », « [E1, E2, C1] » ; citation nue « E3 » ; ou nombre. Les citations passent avant
+// les nombres : sinon « E3 » serait lu comme le nombre 3
+const REF = String.raw`[EC]\d+`;
+const TOKEN = new RegExp(
+  String.raw`[\[【]\s*(${REF}(?:\s*[,;]?\s*${REF})*)\s*[\]】]|\b(${REF})\b|\$?\d[\d,]*(?:\.\d+)?(?:\s?%)?`,
+  "g",
+);
+// Le gras Markdown (« **14.86 %** ») n'est pas interprété : ses marques sont retirées
+const MARKDOWN = /\*\*|__/g;
 const SCALES = [1, 1e3, 1e6, 1e9];
 
 function parse(text: string): number {
-  return Number(text.replace(/[$,%]/g, ""));
+  return Number(text.replace(/[$,%\s]/g, ""));
 }
 
 function close(a: number, b: number): boolean {
@@ -45,14 +54,21 @@ export function segment(
 ): Segment[] {
   const segments: Segment[] = [];
   const known = new Set(evidence.map((e) => e.id));
+  const calcs = new Map(calculations.map((c) => [c.name, c]));
+  const clean = text.replace(MARKDOWN, "");
   let last = 0;
-  for (const match of text.matchAll(TOKEN)) {
+  for (const match of clean.matchAll(TOKEN)) {
     const start = match.index ?? 0;
-    if (start > last) segments.push({ kind: "text", text: text.slice(last, start) });
-    const citation = match[1] ?? match[2];
-    if (citation) {
-      // Une citation n'est cliquable que si elle désigne une source réellement collectée
-      segments.push(known.has(citation) ? { kind: "citation", id: citation } : { kind: "text", text: match[0] });
+    if (start > last) segments.push({ kind: "text", text: clean.slice(last, start) });
+    const group = match[1] ?? match[2];
+    if (group) {
+      // Une citation n'est mise en forme que si elle désigne une source ou un calcul réels
+      for (const id of group.match(new RegExp(REF, "g")) ?? []) {
+        const calculation = calcs.get(id);
+        if (known.has(id)) segments.push({ kind: "citation", id });
+        else if (calculation) segments.push({ kind: "calculation", calculation });
+        else segments.push({ kind: "text", text: id });
+      }
     } else {
       const value = parse(match[0]);
       // Les années (« FY2018 ») ne sont pas des montants à expliquer
@@ -65,6 +81,6 @@ export function segment(
     }
     last = start + match[0].length;
   }
-  if (last < text.length) segments.push({ kind: "text", text: text.slice(last) });
+  if (last < clean.length) segments.push({ kind: "text", text: clean.slice(last) });
   return segments;
 }

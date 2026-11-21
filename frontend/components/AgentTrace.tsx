@@ -152,8 +152,10 @@ export function AgentTrace({ steps, running }: { steps: StepEvent[]; running: bo
   return (
     <ol className="relative space-y-3 border-l border-line pl-4">
       {visible(steps).map((step, i) => (
-        <li key={i} className="rise">
-          <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full bg-accent" />
+        <li key={i} className="rise relative">
+          {/* Repère : l'étape elle-même (l'animation « rise » en fait le bloc de positionnement).
+              Le point est centré sur la ligne, 1rem de marge + 5px de demi-point plus loin */}
+          <span className="absolute -left-[21.5px] top-1.5 h-2.5 w-2.5 rounded-full bg-accent" />
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-sm font-medium">{LABELS[step.node]?.title ?? step.node}</span>
             <span className="font-mono text-xs text-muted">{(step.ms / 1000).toFixed(1)} s</span>
@@ -165,8 +167,8 @@ export function AgentTrace({ steps, running }: { steps: StepEvent[]; running: bo
         </li>
       ))}
       {running && (
-        <li className="flex items-center gap-2 text-sm text-muted">
-          <span className="absolute -left-[5px] h-2.5 w-2.5 animate-ping rounded-full bg-accent" />
+        <li className="relative flex items-center gap-2 text-sm text-muted">
+          <span className="absolute -left-[21.5px] h-2.5 w-2.5 animate-ping rounded-full bg-accent" />
           L&apos;agent travaille…
         </li>
       )}

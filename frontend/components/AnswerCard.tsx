@@ -17,6 +17,18 @@ function Text({ text, answer, onCite }: { text: string; answer: AnswerEvent; onC
             </button>
           );
         }
+        if (part.kind === "calculation") {
+          // Un calcul n'a pas de fiche source : sa formule s'affiche au survol
+          const { name, expression, value } = part.calculation;
+          return (
+            <span key={i} className="group relative mx-0.5 cursor-help">
+              <span className="rounded bg-ok-soft px-1 font-mono text-xs text-ok">{name}</span>
+              <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 hidden w-72 rounded-md bg-ink p-2 font-mono text-xs text-panel shadow-lg group-hover:block">
+                {name} = {expression} = {value.toLocaleString("en-US", { maximumFractionDigits: 4 })}
+              </span>
+            </span>
+          );
+        }
         if (!part.provenance) return <span key={i}>{part.text}</span>;
         // Chaque nombre traçable est souligné ; son origine s'affiche au survol
         const origin =
