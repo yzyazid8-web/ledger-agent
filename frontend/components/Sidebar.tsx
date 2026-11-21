@@ -9,7 +9,7 @@ export const EXAMPLES = [
   "What was 3M's capital expenditure in FY2018?",
   "What is Kraft Heinz's FY2019 inventory turnover ratio?",
   "Does 3M have a healthy quick ratio as of Q2 FY2023?",
-  "Which segment drove most of AMD's revenue growth in FY2022?",
+  "From FY21 to FY22, excluding Embedded, in which AMD segment did sales increase the most proportionally?",
 ];
 
 export function Sidebar({
