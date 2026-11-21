@@ -19,7 +19,7 @@ from ledger_agent.agent.react_prompts import (
 )
 from ledger_agent.agent.toolbox import TERMINAL_TOOLS, Toolbox
 from ledger_agent.agent.verify import verify_numbers
-from ledger_agent.answer_format import ABSTAIN_MARKER
+from ledger_agent.answer_format import ABSTAIN_MARKER, extract_final_answer, is_abstention
 from ledger_agent.llm.types import (
     CompletionParams,
     LLMClient,
@@ -93,6 +93,27 @@ def _summary(name: str, observation: dict[str, Any]) -> str:
     return ""
 
 
+_FINAL_MARKER = re.compile(r"final answer\s*:", re.IGNORECASE)
+_REFERENCE = re.compile(r"\b[EC]\d+\b")
+
+
+def text_submission(text: str) -> dict[str, Any] | None:
+    """Réponse rédigée sans outil, reconnue à sa ligne « Final answer: » ; None sinon."""
+    markers = list(_FINAL_MARKER.finditer(text))
+    if not markers:
+        # Sans ce repère, le texte peut n'être qu'une étape de raisonnement
+        return None
+    final = extract_final_answer(text)
+    if is_abstention(text):
+        return {"tool": "abstain", "reason": final}
+    return {
+        "tool": "submit_answer",
+        "answer": text[: markers[-1].start()].strip(),
+        "final_answer": final,
+        "cited": list(dict.fromkeys(_REFERENCE.findall(text))),
+    }
+
+
 class ReactAgent:
     def __init__(
         self,
@@ -147,6 +168,25 @@ class ReactAgent:
                     {"role": "assistant", "content": response.text or None, "tool_calls": calls}
                 )
             else:
+                submission = text_submission(response.text)
+                if submission is not None:
+                    # Réponse rédigée hors outil : acceptée telle quelle, puis vérifiée
+                    # comme une réponse soumise par submit_answer
+                    messages.append({"role": "assistant", "content": response.text})
+                    return {
+                        "messages": messages,
+                        "pending": [],
+                        "steps": steps + 1,
+                        "force_tool": False,
+                        "submitted": submission,
+                        "llm_calls": [response],
+                        "trace": _event(
+                            "agent",
+                            started,
+                            step=steps + 1,
+                            actions=[{"tool": submission["tool"], "args": {"en_texte": True}}],
+                        ),
+                    }
                 messages += [
                     {"role": "assistant", "content": response.text},
                     {"role": "user", "content": NO_TOOL_CALLED},
@@ -259,9 +299,11 @@ class ReactAgent:
             }
 
         def after_agent(state: ReactState) -> str:
-            # Sans appel d'outil, l'agent est relancé ; au-delà du budget, il s'abstient
+            # Sans appel d'outil ni réponse, l'agent est relancé ; au-delà du budget, il s'abstient
             if state.get("pending"):
                 return "tools"
+            if state.get("submitted"):
+                return "finish"
             return "agent" if state.get("steps", 0) <= cfg.max_steps else "give_up"
 
         def after_tools(state: ReactState) -> str:
@@ -288,7 +330,7 @@ class ReactAgent:
         ):
             graph.add_node(name, _node(fn))
         graph.add_edge(START, "agent")
-        graph.add_conditional_edges("agent", after_agent, ["tools", "agent", "give_up"])
+        graph.add_conditional_edges("agent", after_agent, ["tools", "finish", "agent", "give_up"])
         graph.add_conditional_edges("tools", after_tools, ["finish", "agent", "give_up"])
         graph.add_edge("give_up", END)
         if cfg.use_verifier:

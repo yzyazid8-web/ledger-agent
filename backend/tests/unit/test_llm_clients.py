@@ -8,7 +8,14 @@ from ledger_agent.llm.cache import CachedLLM
 from ledger_agent.llm.gemini import GeminiClient, parse_response
 from ledger_agent.llm.http_errors import daily_quota_wait, sanitize
 from ledger_agent.llm.openai_compatible import OpenAICompatibleClient
-from ledger_agent.llm.types import CompletionParams, LLMError, LLMQuotaError, LLMResponse, Message
+from ledger_agent.llm.types import (
+    CompletionParams,
+    LLMError,
+    LLMQuotaError,
+    LLMResponse,
+    LLMToolCallError,
+    Message,
+)
 
 MESSAGES: list[Message] = [
     {"role": "system", "content": "Be brief."},
@@ -211,3 +218,46 @@ def test_cache_can_be_used_from_another_thread(tmp_path: Path) -> None:
     cached.close()
 
     assert results == ["answer 1"]
+
+
+def test_a_rejected_tool_call_does_not_block_the_next_call_for_a_minute() -> None:
+    # Cas observé en ligne : après un appel d'outil refusé (HTTP 400), l'appel suivant
+    # attendait 58 s, car la réservation complète du limiteur n'était jamais libérée
+    rejected = httpx.Response(
+        400, json={"error": {"code": "tool_use_failed", "message": "missing properties"}}
+    )
+    responses = iter([rejected, chat_response("ok")])
+    sleeps: list[float] = []
+    client = OpenAICompatibleClient(
+        "key",
+        "m",
+        tokens_per_minute=3000,
+        transport=httpx.MockTransport(lambda _: next(responses)),
+        sleep=sleeps.append,
+    )
+    params = CompletionParams(max_tokens=2500)
+
+    with pytest.raises(LLMToolCallError, match="missing properties"):
+        client.complete(MESSAGES, params)
+    client.complete(MESSAGES, params)
+
+    assert sleeps == []
+
+
+def test_tool_calls_are_parsed_from_the_response() -> None:
+    call = {"id": "c1", "type": "function", "function": {"name": "f", "arguments": '{"a": 1}'}}
+    response = httpx.Response(
+        200,
+        json={
+            "choices": [{"message": {"content": None, "tool_calls": [call]}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 2},
+        },
+    )
+    client = OpenAICompatibleClient(
+        "key", "m", tokens_per_minute=None, transport=httpx.MockTransport(lambda _: response)
+    )
+
+    result = client.complete(MESSAGES, CompletionParams())
+
+    assert result.text == ""
+    assert result.tool_calls[0]["function"]["arguments"] == '{"a": 1}'

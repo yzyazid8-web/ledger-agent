@@ -288,8 +288,9 @@ def test_citing_a_calculation_and_its_formula_constants_is_accepted() -> None:
     assert "verify" in [t["node"] for t in answer.trace]
 
 
-def test_a_free_text_answer_forces_a_tool_call_on_the_next_turn() -> None:
-    agent, llm = make_agent(["Capex was $1,577 million.", *GOOD_RUN])
+def test_text_without_a_final_answer_line_forces_a_tool_call_next() -> None:
+    # Sans « Final answer: », le texte peut n'être qu'une étape de raisonnement
+    agent, llm = make_agent(["Now I will fetch the 2018 value.", *GOOD_RUN])
 
     answer = agent.run(QUESTION)
 
@@ -323,3 +324,33 @@ def test_numbers_written_inside_a_formula_are_refused_but_constants_allowed() ->
 
     assert "inputs" in smuggled["error"]
     assert named["value"] == 157700.0
+
+
+def test_a_text_answer_with_a_final_line_is_accepted_and_verified() -> None:
+    text = "Capex was $1,577 million [E1].\n\nFinal answer: $1,577 million"
+    agent, llm = make_agent([*GOOD_RUN[:2], text])
+
+    answer = agent.run(QUESTION)
+
+    assert not answer.abstained
+    assert "Final answer: $1,577 million" in answer.text
+    assert len(llm.seen) == 3  # aucun tour supplémentaire pour resoumettre
+    assert "verify" in [t["node"] for t in answer.trace]
+
+
+def test_an_invented_figure_in_a_text_answer_is_still_rejected() -> None:
+    text = "Capex was $1,999 million.\n\nFinal answer: $1,999 million"
+    agent, llm = make_agent([*GOOD_RUN[:2], text, *GOOD_RUN[2:]])
+
+    answer = agent.run(QUESTION)
+
+    assert any("rejected" in (m["content"] or "") for m in llm.seen[3] if m["role"] == "user")
+    assert "$1,577 million" in answer.text
+
+
+def test_a_text_refusal_with_a_final_line_is_an_abstention() -> None:
+    agent, _ = make_agent(["The filings do not say.\n\nFinal answer: INSUFFICIENT_CONTEXT"])
+
+    answer = agent.run(QUESTION)
+
+    assert answer.abstained

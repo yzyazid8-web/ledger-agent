@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from ledger_agent.common.rate_limit import TokenRateLimiter
+from ledger_agent.common.rate_limit import Reservation, TokenRateLimiter
 from ledger_agent.llm.http_errors import daily_quota_wait, parse_seconds, sanitize
 from ledger_agent.llm.types import (
     CompletionParams,
@@ -132,12 +132,17 @@ class OpenAICompatibleClient:
             try:
                 response = self._client.post("/chat/completions", json=body)
             except httpx.TransportError as exc:
+                self._release(reservation, 0)  # la requête n'a pas atteint le fournisseur
                 if is_last_attempt:
                     raise LLMError(f"Erreur réseau : {exc}") from exc
                 self._backoff(attempt, None, type(exc).__name__)
                 continue
             latency = time.perf_counter() - started
 
+            if response.is_error:
+                # Un appel refusé ne génère rien : seule l'estimation du prompt reste comptée.
+                # Sinon la réservation complète bloquerait l'appel suivant près d'une minute
+                self._release(reservation, estimate_tokens(messages, 0, params.tools))
             self._raise_if_quota_exhausted(response)
             if response.status_code in RETRYABLE_STATUS and not is_last_attempt:
                 self._backoff(
@@ -181,6 +186,10 @@ class OpenAICompatibleClient:
             return result
 
         raise LLMError("Abandon après toutes les relances")  # pragma: no cover
+
+    def _release(self, reservation: Reservation | None, tokens: int) -> None:
+        if self._limiter and reservation is not None:
+            self._limiter.settle(reservation, tokens)
 
     def _backoff(self, attempt: int, retry_after: str | None, reason: str) -> None:
         delay = min(2.0 ** (attempt + 1), MAX_BACKOFF_SECONDS)
