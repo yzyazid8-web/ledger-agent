@@ -97,3 +97,15 @@ def input_matches_evidence(value: float, evidence: Evidence) -> bool:
     """Vrai si la valeur passée à un calcul figure bien dans la preuve citée."""
     sources = _source_values([evidence], [])
     return any(abs(abs(value) - s) <= max(REL_TOL * abs(value), 1e-9) for s in sources)
+
+
+def evidence_for_numbers(text: str, evidence: list[Evidence]) -> list[str]:
+    """Preuves d'où viennent les nombres de `text`, selon la correspondance du vérificateur."""
+    cleaned = re.sub(r"\[?\b[EC]\d+\b\]?", " ", text)
+    mentions = [m for m in parse_numbers(cleaned) if not _skippable(m)]
+    found: list[str] = []
+    for item in evidence:
+        sources = _source_values([item], [])
+        if item.id not in found and any(_traced(m, sources) for m in mentions):
+            found.append(item.id)
+    return found
