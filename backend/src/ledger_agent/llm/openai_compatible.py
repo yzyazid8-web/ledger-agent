@@ -29,6 +29,9 @@ MAX_BACKOFF_SECONDS = 60.0
 CHARS_PER_TOKEN = 4
 
 
+MALFORMED_OUTPUT = ("tool_use_failed", "output_parse_failed")
+
+
 def _tool_error_message(response: httpx.Response) -> str:
     # Groq valide les arguments contre le schéma de l'outil et renvoie la raison du refus
     try:
@@ -149,7 +152,9 @@ class OpenAICompatibleClient:
                     attempt, response.headers.get("retry-after"), str(response.status_code)
                 )
                 continue
-            if response.status_code == 400 and "tool_use_failed" in response.text:
+            # Sortie mal formée du modèle (appel d'outil invalide ou texte illisible) : il peut
+            # se corriger au tour suivant, ce n'est pas une panne du fournisseur
+            if response.status_code == 400 and any(c in response.text for c in MALFORMED_OUTPUT):
                 raise LLMToolCallError(_tool_error_message(response))
             if response.is_error:
                 raise LLMError(f"HTTP {response.status_code} : {sanitize(response.text)}")

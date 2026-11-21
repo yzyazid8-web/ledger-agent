@@ -21,7 +21,10 @@ _NUMBER = re.compile(
     r"(?<![A-Za-z0-9.])(?P<neg>[-(])?\s*(?P<dollar>\$)?\s*"
     r"(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)"
     r"\s*(?P<pct>%|percent\b)?"
-    r"\s*(?P<scale>thousand|million|billion|trillion|mn|mm|bn|k|m|b)?\b",
+    # La frontière de mot ne porte que sur l'unité : après un « % » final il n'y en a pas,
+    # et l'exiger faisait perdre le pourcentage (« 79.82% » lu comme 79.82)
+    r"(?:\s*(?P<scale>thousand|million|billion|trillion|mn|mm|bn|k|m|b)\b)?"
+    r"(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
 

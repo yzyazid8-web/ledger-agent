@@ -261,3 +261,15 @@ def test_tool_calls_are_parsed_from_the_response() -> None:
 
     assert result.text == ""
     assert result.tool_calls[0]["function"]["arguments"] == '{"a": 1}'
+
+
+def test_unparseable_model_output_is_reported_as_a_correctable_error() -> None:
+    rejected = httpx.Response(
+        400, json={"error": {"code": "output_parse_failed", "message": "Parsing failed"}}
+    )
+    client = OpenAICompatibleClient(
+        "key", "m", tokens_per_minute=None, transport=httpx.MockTransport(lambda _: rejected)
+    )
+
+    with pytest.raises(LLMToolCallError, match="Parsing failed"):
+        client.complete(MESSAGES, CompletionParams())
