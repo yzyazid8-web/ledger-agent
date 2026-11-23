@@ -6,7 +6,7 @@ cité ou d'un calcul journalisé. Sinon, le système s'abstient.
 
 Le projet est évalué sur [FinanceBench](https://github.com/patronus-ai/financebench) avec une
 méthodologie stricte : jeux dev/test séparés par document, intervalles de confiance, tests
-statistiques appariés et juge LLM validé.
+statistiques appariés et juge LLM d'une autre famille que le générateur.
 
 > **État : en construction.** Ce README décrit uniquement ce qui existe aujourd'hui.
 
@@ -71,8 +71,12 @@ question ─► agent ──appels d'outils──► outils ──observations�
 - Le **vérificateur**, par règles, exige que chaque nombre de la réponse vienne d'une preuve ou
   d'un calcul, **avec le bon signe**. Sinon, la réponse est renvoyée à l'agent, qui peut chercher
   ce qui manque ; au second refus, il s'abstient.
-- **Budget d'étapes** (8 tours) : au dernier tour, seuls `submit_answer` et `abstain` sont
-  proposés, ce qui garantit l'arrêt.
+- **Traçable ne veut pas dire exact** : le vérificateur garantit que chaque nombre a une source,
+  pas que le raisonnement est juste. Une formule mal choisie (par exemple une moyenne non
+  calculée) produit un chiffre traçable mais faux ; c'est ce que mesure l'évaluation.
+- **Budget d'étapes** (12 tours) : au dernier tour, seuls `submit_answer` et `abstain` sont
+  proposés, ce qui garantit l'arrêt. Les sorties mal formées du fournisseur (appel d'outil
+  invalide) ne consomment pas ce budget, dans une limite à part.
 - **Point de comparaison** : `workflow.toml` garde un graphe à étapes fixes (planifier, collecter,
   juger la suffisance, synthétiser, vérifier). L'étude d'ablation mesure ce qu'apporte le fait de
   laisser le modèle piloter sa recherche.
@@ -100,13 +104,18 @@ JSON, et `GET /companies` liste les entreprises couvertes.
   (million, milliard) et une tolérance d'arrondi.
 - **Réponses rédigées** : notées par un juge LLM (Gemini) d'une **autre famille** que le
   générateur (gpt-oss). Le juge note aussi les réponses chiffrées, ce qui permet de **mesurer son
-  accord avec les règles** (kappa de Cohen).
+  accord avec les règles** (kappa de Cohen). Cette mesure ne porte que sur les réponses chiffrées :
+  l'accord du juge sur les réponses rédigées n'est pas validé.
+- **Page retrouvée** : part des questions où une page citée par FinanceBench a été récupérée.
+  Elle n'a de sens que pour les réponses tirées des PDF : une réponse issue d'un fait XBRL n'en
+  récupère aucune, ce qui fait baisser cet indicateur pour l'agent sans erreur de sa part.
 - **Incertitude** : chaque exactitude est publiée avec son intervalle de confiance à 95 %
   (bootstrap). Deux configurations sont comparées sur les mêmes questions avec un **test de
   McNemar exact**.
 - **Prudence** : une question en erreur ou non jugée compte comme non réussie.
 - **Reproductibilité** : chaque exécution enregistre le commit, l'empreinte de la configuration,
-  des prompts et du code de l'agent, du corpus et du découpage. Une reprise avec une configuration modifiée est refusée.
+  des prompts et du code de l'agent, du corpus et du découpage. Une reprise avec une
+  configuration modifiée est refusée.
 
 ## Résultats
 

@@ -56,6 +56,8 @@ class TokenRateLimiter:
         self._clock = clock
         self._sleep = sleep
         self._window: deque[Reservation] = deque()
+        # L'API traite ses requêtes dans un pool de fils : vérifier puis réserver doit être atomique
+        self._lock = threading.Lock()
 
     def _purge(self, now: float) -> None:
         while self._window and now - self._window[0].timestamp >= WINDOW_SECONDS:
@@ -69,14 +71,17 @@ class TokenRateLimiter:
         """Attend qu'il y ait de la place pour `estimated_tokens`, puis les réserve."""
         tokens = min(estimated_tokens, self._limit)
         while True:
-            now = self._clock()
-            self._purge(now)
-            if not self._window or self.used() + tokens <= self._limit:
-                reservation = Reservation(now, tokens)
-                self._window.append(reservation)
-                return reservation
-            # On attend que la plus ancienne réservation sorte de la fenêtre
-            self._sleep(WINDOW_SECONDS - (now - self._window[0].timestamp) + 0.05)
+            with self._lock:
+                now = self._clock()
+                self._purge(now)
+                if not self._window or self.used() + tokens <= self._limit:
+                    reservation = Reservation(now, tokens)
+                    self._window.append(reservation)
+                    return reservation
+                # On attend que la plus ancienne réservation sorte de la fenêtre
+                wait = WINDOW_SECONDS - (now - self._window[0].timestamp) + 0.05
+            # L'attente se fait hors du verrou, pour ne pas bloquer les autres fils
+            self._sleep(wait)
 
     @staticmethod
     def settle(reservation: Reservation, actual_tokens: int) -> None:

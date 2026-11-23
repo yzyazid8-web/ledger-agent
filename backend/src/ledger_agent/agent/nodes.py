@@ -28,7 +28,8 @@ from ledger_agent.tools.search_filings import SearchFilingsResult, SearchFilings
 
 logger = logging.getLogger(__name__)
 
-_PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+# « {growth} » ou avec un format Python : « {ebitda_margin:.2%} »
+_PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)(?::([^{}]*))?\}")
 # Le juge de suffisance n'a pas besoin des passages entiers
 GRADER_PASSAGE_CHARS = 600
 
@@ -325,6 +326,13 @@ def fill_placeholders(text: str, results: dict[str, CalculationResult]) -> tuple
         if result is None:
             missing.append(match.group(1))
             return match.group(0)
+        spec = match.group(2)
+        if spec:
+            # Un format inconnu ne doit pas laisser le gabarit brut dans la réponse
+            try:
+                return format(result.value, spec)
+            except ValueError:
+                pass
         return _format(result.value)
 
     return _PLACEHOLDER.sub(replace, text), [f"unknown calculation {{{m}}}" for m in missing]
@@ -400,9 +408,7 @@ def make_verify_node(rt: AgentRuntime) -> Callable[[AgentState], dict[str, Any]]
         if state.get("abstained"):
             return {"retry": False, "trace": _event("verify", started, skipped="abstention")}
         check = verify_numbers(state["text"], state.get("evidence", []), state.get("results", []))
-        problems = list(state.get("problems", [])) + [
-            f"untraceable number {n}" for n in check.unverified
-        ]
+        problems = list(state.get("problems", [])) + check.problems()
         if not problems:
             return {"retry": False, "trace": _event("verify", started, ok=True)}
         if state.get("attempts", 0) < rt.config.max_synthesis_attempts:
@@ -412,7 +418,7 @@ def make_verify_node(rt: AgentRuntime) -> Callable[[AgentState], dict[str, Any]]
                 "trace": _event("verify", started, ok=False, problems=problems, retry=True),
             }
         # Promesse du projet : un chiffre non traçable entraîne l'abstention
-        unverified = ", ".join(check.unverified) or "see trace"
+        unverified = ", ".join(check.unverified + check.sign_conflicts) or "see trace"
         return {
             "retry": False,
             "abstained": True,

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from ledger_agent.api import main as api_main
 from ledger_agent.api.main import create_app, sse
+from ledger_agent.config import get_settings
 
 STEPS = [
     {"type": "step", "node": "plan", "ms": 10},
@@ -120,3 +121,50 @@ def test_benchmark_serves_the_ablation_report(
         assert client.get("/benchmark").json() == {"split": "dev", "rows": []}
         assert client.get("/benchmark?split=test").status_code == 404
         assert client.get("/benchmark?split=all").status_code == 422
+
+
+# Limite de questions par visiteur (protège le quota gratuit du site public)
+
+
+@pytest.fixture
+def two_questions_per_hour(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("API_QUESTIONS_PER_HOUR", "2")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.mark.usefixtures("two_questions_per_hour")
+def test_a_visitor_over_the_limit_gets_a_clear_message_not_an_http_error() -> None:
+    client, service = client_for([*STEPS, ANSWER])
+    with client:
+        visitor = {"X-Forwarded-For": "203.0.113.7"}
+        for _ in range(2):
+            client.post("/chat", json={"question": "capex?"}, headers=visitor)
+        blocked = client.post("/chat", json={"question": "capex?"}, headers=visitor)
+        other = client.post(
+            "/chat", json={"question": "capex?"}, headers={"X-Forwarded-For": "198.51.100.1"}
+        )
+
+    assert blocked.status_code == 200
+    kind, event = parse_sse(blocked.text)[-1]
+    assert (kind, event["code"]) == ("error", "limit")
+    assert len(service.questions) == 3  # la question bloquée n'a pas atteint l'agent
+    assert parse_sse(other.text)[-1][0] == "answer"
+
+
+@pytest.mark.usefixtures("two_questions_per_hour")
+def test_a_spoofed_forwarded_header_does_not_bypass_the_limit() -> None:
+    # Le client peut écrire le début de l'en-tête ; Azure ajoute l'adresse réelle à la fin
+    client, _ = client_for([ANSWER])
+    with client:
+        statuses = [
+            client.post(
+                "/ask",
+                json={"question": "capex?"},
+                headers={"X-Forwarded-For": f"10.0.0.{i}, 203.0.113.7"},
+            ).status_code
+            for i in range(3)
+        ]
+
+    assert statuses == [200, 200, 429]

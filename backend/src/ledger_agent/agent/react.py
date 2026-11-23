@@ -47,6 +47,7 @@ class ReactState(TypedDict, total=False):
     steps: int
     attempts: int
     force_tool: bool
+    provider_failures: int
     submitted: dict[str, Any] | None
     text: str
     abstained: bool
@@ -60,13 +61,34 @@ class ReactState(TypedDict, total=False):
 class ReactConfig:
     use_xbrl: bool = True
     use_verifier: bool = True
-    max_steps: int = 8
+    max_steps: int = 12
     passages_per_search: int = 3
     max_answer_attempts: int = 2
+    # Sorties mal formées tolérées hors budget d'étapes, avant de compter comme des étapes
+    max_provider_failures: int = 3
 
 
 def _event(node: str, started: float, **detail: Any) -> list[dict[str, Any]]:
     return [{"node": node, "ms": round((time.perf_counter() - started) * 1000), **detail}]
+
+
+# Champs qui doivent être remplis pour qu'un outil de fin soit accepté
+_REQUIRED_FINAL_FIELDS = {"submit_answer": ("answer", "final_answer"), "abstain": ("reason",)}
+
+
+def _missing_fields(name: str, args: Any) -> list[str]:
+    required = _REQUIRED_FINAL_FIELDS.get(name, ())
+    if not isinstance(args, dict):
+        return list(required)
+    return [f for f in required if not str(args.get(f) or "").strip()]
+
+
+def _canonical(arguments: str) -> str:
+    # Deux appels identiques à l'ordre des clés près ont la même empreinte
+    try:
+        return json.dumps(json.loads(arguments), sort_keys=True)
+    except ValueError:
+        return arguments
 
 
 def _preview(arguments: str) -> Any:
@@ -138,6 +160,8 @@ class ReactAgent:
 
     def _graph(self, box: Toolbox) -> Any:
         cfg, llm = self._config, self._llm
+        # Appels d'outils déjà en échec pour cette question, pour repérer les répétitions
+        failed_calls: set[str] = set()
 
         def agent(state: ReactState) -> dict[str, Any]:
             started = time.perf_counter()
@@ -158,13 +182,17 @@ class ReactAgent:
             try:
                 response = llm.complete(messages, params)
             except LLMToolCallError as exc:
-                # Appel mal formé refusé par le fournisseur : le modèle est prévenu et réessaie,
-                # dans la limite du budget d'étapes
+                # Sortie mal formée refusée par le fournisseur : le modèle est prévenu et réessaie.
+                # Ces ratés ne consomment pas le budget de raisonnement, dans une limite à part ;
+                # au-delà, ils comptent comme des étapes, ce qui garantit l'arrêt
+                failures = state.get("provider_failures", 0) + 1
+                counted = failures > cfg.max_provider_failures
                 messages.append({"role": "user", "content": invalid_tool_call(str(exc))})
                 return {
                     "messages": messages,
                     "pending": [],
-                    "steps": steps + 1,
+                    "steps": steps + 1 if counted else steps,
+                    "provider_failures": failures,
                     "trace": _event("agent", started, step=steps + 1, actions=[], error=str(exc)),
                 }
             calls = response.tool_calls
@@ -226,10 +254,27 @@ class ReactAgent:
                 name, arguments = call["function"]["name"], call["function"]["arguments"]
                 if name in TERMINAL_TOOLS:
                     args = _preview(arguments)
-                    submitted = {"tool": name, **(args if isinstance(args, dict) else {})}
-                    observation: dict[str, Any] = {"status": "received"}
+                    missing = _missing_fields(name, args)
+                    if missing:
+                        # Une réponse sans contenu ne doit jamais être acceptée : on la refuse
+                        # comme une erreur d'outil, et le modèle la soumet à nouveau
+                        observation: dict[str, Any] = {
+                            "error": f"{name} requires non-empty {', '.join(missing)}"
+                        }
+                    else:
+                        submitted = {"tool": name, **args}
+                        observation = {"status": "received"}
                 else:
                     observation = box.execute(name, arguments)
+                    # Le même appel, déjà en échec : on pousse le modèle à changer d'approche
+                    key = f"{name}:{_canonical(arguments)}"
+                    if "error" in observation and key in failed_calls:
+                        observation["hint"] = (
+                            "You already made this exact call and it failed. Change the query, "
+                            "concept, year, source or values instead of repeating it."
+                        )
+                    if "error" in observation:
+                        failed_calls.add(key)
                 messages.append(
                     {
                         "role": "tool",
@@ -279,7 +324,7 @@ class ReactAgent:
             check = verify_numbers(state["text"], box.evidence, list(box.calculations.values()))
             # Citer un calcul (C1) est aussi légitime que citer une preuve (E1)
             known = {e.id for e in box.evidence} | set(box.calculations)
-            problems = [f"untraceable number {n}" for n in check.unverified] + [
+            problems = check.problems() + [
                 f"unknown citation {c}" for c in state.get("cited", []) if c not in known
             ]
             if not problems:
@@ -300,7 +345,7 @@ class ReactAgent:
                     "submitted": None,
                     "trace": _event("verify", started, ok=False, problems=problems, retry=True),
                 }
-            unverified = ", ".join(check.unverified) or "citations"
+            unverified = ", ".join(check.unverified + check.sign_conflicts) or "citations"
             return {
                 "attempts": attempts,
                 "abstained": True,

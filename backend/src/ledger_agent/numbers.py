@@ -28,13 +28,21 @@ _NUMBER = re.compile(
     re.IGNORECASE,
 )
 
-# Mots qui expriment un écart négatif sans signe moins : « a decrease of 0.02 »
+# Tirets typographiques qui valent un signe moins : gpt-oss écrit souvent le tiret insécable
+# (U+2011) ou le signe moins mathématique (U+2212) devant un montant. Remplacés un pour un,
+# ils ne décalent aucune position dans le texte
+_DASHES = str.maketrans({c: "-" for c in "\u2010\u2011\u2012\u2013\u2014\u2212\ufe63\uff0d"})
+
+# Mots qui expriment un écart négatif sans signe moins : « a decrease of 0.02 », « 13 fewer »
 _NEGATIVE_WORDS = re.compile(
-    r"\b(decrease|decreased|decline|declined|drop|dropped|fell|fall|lower|loss|negative|"
-    r"down|reduction|reduced|shrunk|shrank|contraction)\b",
+    r"\b(decreas(?:e|ed|es|ing)|declin(?:e|ed|es|ing)|drop(?:s|ped|ping)?|fell|fall(?:s|ing)?|"
+    r"lower|loss(?:es)?|negative|down|reduc(?:tion|ed|ing)|shr(?:unk|ank|inking)|"
+    r"contract(?:ion|ed)|fewer|less|deficits?|shortfall|minus)\b",
     re.IGNORECASE,
 )
 NEGATIVE_WINDOW = 40
+# Mot qui suit directement la quantité et en fait un écart négatif : « 13 fewer stores »
+_NEGATIVE_AFTER = re.compile(r"\s*(?:fewer|less|lower)\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +79,7 @@ class NumberMention:
 
 
 def parse_numbers(text: str) -> list[NumberMention]:
+    text = text.translate(_DASHES)
     mentions = []
     for match in _NUMBER.finditer(text):
         # « 3M » est le nom de l'entreprise, pas 3 millions
@@ -85,7 +94,9 @@ def parse_numbers(text: str) -> list[NumberMention]:
                 decimals=len(digits.split(".")[1]) if "." in digits else 0,
                 is_percent=match.group("pct") is not None,
                 scale=_SCALES.get(scale_word, 1.0),
-                negative=match.group("neg") is not None or bool(_NEGATIVE_WORDS.search(before)),
+                negative=match.group("neg") is not None
+                or bool(_NEGATIVE_WORDS.search(before))
+                or bool(_NEGATIVE_AFTER.match(text, match.end())),
                 monetary=match.group("dollar") is not None,
                 text=match.group(0).strip(),
             )

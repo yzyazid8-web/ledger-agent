@@ -1,0 +1,48 @@
+# Workflow agentique avec gpt-oss-120b à TOUTES les étapes, comme l'agent ReAct.
+# Comparer workflow_120b et agent isole l'effet de l'architecture (parcours fixe ou
+# piloté par le modèle) de celui de la taille du modèle.
+
+name = "workflow_120b"
+pipeline = "agent"
+
+# L'agent transmet lui-même les filtres (entreprise, exercice) à l'outil de recherche
+[retrieval]
+mode = "hybrid"
+filters = "none"
+lexical_weight = 0.5
+candidates = 30
+
+# Modèle qui rédige la réponse finale
+[llm]
+provider = "groq"
+model = "openai/gpt-oss-120b"
+max_tokens = 2500
+temperature = 0.0
+reasoning_effort = "low"
+tokens_per_minute = 8000
+
+[agent]
+mode = "workflow"
+use_xbrl = true
+use_grader = true
+use_verifier = true
+max_search_rounds = 2
+passages_per_query = 3
+max_passages = 8
+max_synthesis_attempts = 2
+
+# Petit modèle pour planifier et juger : son quota Groq est séparé de celui du rédacteur
+# Seule différence avec workflow.toml : le planificateur et le juge utilisent le même modèle
+# que l'agent ReAct
+[agent.planner_llm]
+provider = "groq"
+model = "openai/gpt-oss-120b"
+max_tokens = 1000
+temperature = 0.0
+reasoning_effort = "low"
+tokens_per_minute = 8000
+
+[judge]
+provider = "gemini"
+model = "gemini-3.5-flash-lite"
+requests_per_minute = 10

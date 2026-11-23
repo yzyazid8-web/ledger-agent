@@ -3,6 +3,7 @@
 import json
 from typing import Any
 
+import pytest
 from test_agent import QUESTION, StaticRetriever, fact_store
 
 from ledger_agent.agent.evidence import Evidence
@@ -247,9 +248,9 @@ def test_a_negative_result_presented_as_an_increase_is_rejected() -> None:
     results = [calculate("(a - b) / b * 100", {"a": 1373, "b": 1577})]  # ≈ -12.94
     evidence: list[Evidence] = []
 
-    assert verify_numbers("Capex rose by 12.94% [E1].", evidence, results).unverified
-    assert not verify_numbers("Capex declined by 12.94%.", evidence, results).unverified
-    assert not verify_numbers("Capex changed by -12.94%.", evidence, results).unverified
+    assert verify_numbers("Capex rose by 12.94% [E1].", evidence, results).sign_conflicts
+    assert verify_numbers("Capex declined by 12.94%.", evidence, results).ok
+    assert verify_numbers("Capex changed by -12.94%.", evidence, results).ok
 
 
 def test_a_malformed_tool_call_is_reported_to_the_model_instead_of_crashing() -> None:
@@ -384,3 +385,109 @@ def test_escaped_newlines_written_by_the_model_are_restored() -> None:
 
     assert r"\n" not in answer.text  # plus de « \n » écrit en toutes lettres
     assert answer.text.endswith("Final answer: $1,577 million")
+
+
+# Sorties réelles rejetées à tort par le contrôle de signe (00070 et 00460)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "its working capital was \u202f\u2011$1,561 million.",  # tiret insécable, 00070
+        "its working capital was \u2212$1,561 million.",  # signe moins mathématique
+        "a working capital deficit of $1,561 million.",
+        "Best Buy had 13 fewer stores.",  # le mot négatif suit le nombre, 00460
+    ],
+)
+def test_negative_results_written_typographically_are_accepted(text: str) -> None:
+    results = [
+        calculate("a - b", {"a": 1250, "b": 2811}),  # -1561
+        calculate("a - b", {"a": 969, "b": 982}),  # -13
+    ]
+
+    check = verify_numbers(text, [], results)
+
+    assert check.ok, check.problems()
+
+
+def test_a_sign_problem_tells_the_model_how_to_fix_it() -> None:
+    results = [calculate("a - b", {"a": 1250, "b": 2811})]
+
+    check = verify_numbers("Working capital was $1,561 million.", [], results)
+
+    assert check.sign_conflicts == ["$1,561 million"]
+    assert "minus sign" in check.problems()[0]
+
+
+# Unités : tableau en millions, valeur passée en brut (cas réel 03620)
+
+
+def test_a_raw_value_from_a_table_in_millions_is_accepted() -> None:
+    box = Toolbox(SearchFilingsTool(StaticRetriever()), None, passages_per_search=1)
+    first = box.execute("search_filings", json.dumps({"query": "property plant equipment"}))
+    ref = first["passages"][0]["id"]  # le tableau « (1,577) | (1,373) », en millions
+
+    raw = box.execute(
+        "calculate",
+        json.dumps({"expression": "a * 2", "inputs": {"a": {"source": ref, "value": 1577000000}}}),
+    )
+    absent = box.execute(
+        "calculate",
+        json.dumps({"expression": "a * 2", "inputs": {"a": {"source": ref, "value": 1999}}}),
+    )
+
+    assert raw["value"] == 3154000000
+    assert "échelle" in absent["error"]
+
+
+def test_a_ratio_written_as_a_percentage_without_sign_is_traced() -> None:
+    results = [calculate("a / b", {"a": 5403, "b": 10000})]  # 0.5403
+
+    assert verify_numbers("The retention ratio is 54.03 percent.", [], results).ok
+    assert verify_numbers("The retention ratio is 54.03.", [], results).ok
+
+
+# Robustesse : réponses vides, ratés du fournisseur, appels répétés
+
+
+def test_an_empty_submission_is_refused_and_resubmitted() -> None:
+    empty = call("submit_answer", answer="", final_answer="", cited=[])
+    agent, llm = make_agent([*GOOD_RUN[:3], [empty], GOOD_RUN[3]])
+
+    answer = agent.run(QUESTION)
+
+    refusal = json.loads(llm.seen[4][-1]["content"] or "{}")
+    assert "non-empty" in refusal["error"]
+    assert "Final answer: $1,577 million" in answer.text
+
+
+def test_provider_failures_do_not_consume_the_reasoning_budget() -> None:
+    rejected = LLMToolCallError("tool call validation failed")
+    # 3 étapes de raisonnement pour un budget de 3 : les deux ratés ne doivent pas compter
+    agent, _ = make_agent([rejected, rejected, *GOOD_RUN[1:]], ReactConfig(max_steps=3))
+
+    answer = agent.run(QUESTION)
+
+    assert not answer.abstained
+    assert "$1,577 million" in answer.text
+
+
+def test_endless_provider_failures_still_end_the_run() -> None:
+    rejected = LLMToolCallError("tool call validation failed")
+    agent, _ = make_agent([rejected] * 30, ReactConfig(max_steps=2))
+
+    answer = agent.run(QUESTION)
+
+    assert answer.abstained
+
+
+def test_repeating_a_failed_call_gets_a_hint_to_change_approach() -> None:
+    bad = call("get_fact", ticker="MMM", concept="Revenues", fiscal_year=2018)
+    agent, llm = make_agent([[bad], [bad], *GOOD_RUN])
+
+    agent.run(QUESTION)
+
+    first = json.loads(llm.seen[1][-1]["content"] or "{}")
+    second = json.loads(llm.seen[2][-1]["content"] or "{}")
+    assert "hint" not in first
+    assert "already made this exact call" in second["hint"]
