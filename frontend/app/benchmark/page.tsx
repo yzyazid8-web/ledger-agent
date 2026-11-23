@@ -9,6 +9,7 @@ const DESCRIPTIONS: Record<string, string> = {
   hybrid: "Recherche hybride filtrée (vecteurs + BM25), sans agent",
   hybrid_rerank: "Recherche hybride + reranker",
   workflow: "Workflow agentique à étapes fixes (le LLM décide dans chaque étape)",
+  workflow_120b: "Même workflow, avec gpt-oss-120b à toutes les étapes comme l'agent",
   agent_sans_xbrl: "Agent ReAct sans les outils de données XBRL",
   agent_sans_verif: "Agent ReAct sans la vérification des chiffres",
   agent: "Agent ReAct complet : le LLM choisit ses outils et lit leurs résultats",

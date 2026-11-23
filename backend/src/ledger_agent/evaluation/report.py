@@ -16,6 +16,7 @@ ORDER = (
     "hybrid",
     "hybrid_rerank",
     "workflow",
+    "workflow_120b",
     "agent_sans_xbrl",
     "agent_sans_verif",
     "agent",
@@ -24,8 +25,12 @@ ORDER = (
 COMPARISONS = (
     ("naive", "hybrid"),
     ("hybrid", "workflow"),
+    # Même architecture, modèle différent : effet de la taille du planificateur
+    ("workflow", "workflow_120b"),
     ("hybrid", "agent"),
     ("workflow", "agent"),
+    # Même modèle, architecture différente : effet propre de l'autonomie de l'agent
+    ("workflow_120b", "agent"),
     ("naive", "agent"),
     ("agent_sans_xbrl", "agent"),
     ("agent_sans_verif", "agent"),
