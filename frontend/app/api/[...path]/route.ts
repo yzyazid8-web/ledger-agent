@@ -22,7 +22,12 @@ async function relay(request: Request, path: string[], method: "GET" | "POST"): 
   try {
     const upstream = await fetch(target, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // L'API limite les questions par visiteur : elle a besoin de son adresse. L'entrée HTTP
+        // d'Azure ajoute l'adresse réelle en fin d'en-tête, c'est elle que l'API retient
+        "X-Forwarded-For": request.headers.get("x-forwarded-for") ?? "",
+      },
       body: method === "POST" ? await request.text() : undefined,
       signal: request.signal,
       cache: "no-store",

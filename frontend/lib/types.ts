@@ -43,7 +43,8 @@ export interface AnswerEvent {
 
 export interface ErrorEvent {
   type: "error";
-  code: "quota" | "llm" | "internal";
+  // « limit » : trop de questions de ce visiteur dans l'heure (protège le quota gratuit)
+  code: "quota" | "limit" | "llm" | "internal";
   message: string;
   retry_after_s?: number;
 }

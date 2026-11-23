@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 
 from ledger_agent.api.schemas import AnswerResponse, ChatRequest, Company, Health
 from ledger_agent.api.service import AgentService, LocalAgentService
+from ledger_agent.api.visitor_limit import VisitorLimiter, visitor_key
 from ledger_agent.config import REPO_ROOT, get_settings
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,11 @@ def sse(event: dict[str, Any]) -> str:
 def create_app(service_factory: ServiceFactory | None = None) -> FastAPI:
     settings = get_settings()
     factory = service_factory or (lambda: LocalAgentService(settings))
+    limiter = VisitorLimiter(settings.api_questions_per_hour)
+    limit_message = (
+        f"Limite de {limiter.per_hour} questions par heure atteinte pour ce visiteur : "
+        "le site utilise un quota gratuit. Réessaie un peu plus tard."
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -81,7 +87,12 @@ def create_app(service_factory: ServiceFactory | None = None) -> FastAPI:
     @app.post("/chat")
     def chat(body: ChatRequest, request: Request) -> StreamingResponse:
         """Diffuse les étapes de l'agent au fil de l'eau, puis la réponse finale (SSE)."""
-        events: Iterator[dict[str, Any]] = service(request).stream(body.question)
+        events: Iterator[dict[str, Any]]
+        if limiter.allow(visitor_key(request)):
+            events = service(request).stream(body.question)
+        else:
+            # Événement d'erreur plutôt qu'un code HTTP : l'interface affiche le message tel quel
+            events = iter([{"type": "error", "code": "limit", "message": limit_message}])
         return StreamingResponse(
             (sse(e) for e in events),
             media_type="text/event-stream",
@@ -92,6 +103,8 @@ def create_app(service_factory: ServiceFactory | None = None) -> FastAPI:
     @app.post("/ask", response_model=AnswerResponse)
     def ask(body: ChatRequest, request: Request) -> AnswerResponse:
         """Même traitement que /chat, mais renvoie une seule réponse JSON à la fin."""
+        if not limiter.allow(visitor_key(request)):
+            raise HTTPException(status_code=429, detail=limit_message)
         steps: list[dict[str, Any]] = []
         for event in service(request).stream(body.question):
             if event["type"] == "error":

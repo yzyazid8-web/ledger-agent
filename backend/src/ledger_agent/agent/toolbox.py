@@ -229,7 +229,12 @@ class Toolbox:
                     return {"error": f"{name} : {value} ne correspond pas au résultat de {ref}"}
             elif ref in by_id:
                 if not input_matches_evidence(value, by_id[ref]):
-                    return {"error": f"{name} : {value} n'apparaît pas dans {ref}"}
+                    # Le modèle doit savoir quoi corriger, sinon il renvoie le même appel en boucle
+                    return {
+                        "error": f"{name} : {value} n'apparaît pas dans {ref}, même à une échelle "
+                        "près (milliers, millions, milliards). Recopie une valeur affichée dans "
+                        f"{ref}, ou cite la preuve qui contient ce chiffre."
+                    }
             else:
                 return {"error": f"{name} : source inconnue {ref}"}
             variables[name] = value

@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ledger_agent.agent.evidence import Evidence
 from ledger_agent.numbers import NumberMention, parse_numbers
@@ -16,11 +16,21 @@ _SCALE_STEPS = (1.0, 1e3, 1e6, 1e9)
 
 @dataclass(frozen=True, slots=True)
 class VerificationResult:
+    # Nombres sans source, et nombres qui présentent un résultat négatif comme positif
     unverified: list[str]
+    sign_conflicts: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        return not self.unverified
+        return not (self.unverified or self.sign_conflicts)
+
+    def problems(self) -> list[str]:
+        """Messages adressés au modèle : chacun dit précisément quoi corriger."""
+        return [f"untraceable number {n}" for n in self.unverified] + [
+            f"{n} restates a negative calculation result as positive: write it with a minus "
+            "sign (-) or a word such as 'decrease' or 'fewer'"
+            for n in self.sign_conflicts
+        ]
 
 
 def _source_values(
@@ -34,7 +44,8 @@ def _source_values(
         for mention in parse_numbers(item.text):
             values += list(mention.variants(allow_unscaled=True))
     for result in results:
-        values += [abs(result.value), abs(result.value) / 100]
+        # Un ratio peut être écrit en pourcentage, avec ou sans « % » (0.5403 → 54.03)
+        values += [abs(result.value), abs(result.value) / 100, abs(result.value) * 100]
         # Les constantes d'une formule (le « 100 » d'un pourcentage) peuvent être recopiées
         values += formula_literals(result.expression)
     return values
@@ -83,20 +94,38 @@ def verify_numbers(
     cleaned = re.sub(r"\[?\b[EC]\d+\b\]?", " ", text)
     sources = _source_values(evidence, results)
     unverified: list[str] = []
+    conflicts: list[str] = []
     for mention in parse_numbers(cleaned):
         if _skippable(mention):
             continue
         if not _traced(mention, sources):
             unverified.append(mention.text)
         elif _sign_conflict(mention, results):
-            unverified.append(f"{mention.text} (signe inversé par rapport au calcul)")
-    return VerificationResult(unverified=list(dict.fromkeys(unverified)))
+            conflicts.append(mention.text)
+    return VerificationResult(
+        unverified=list(dict.fromkeys(unverified)), sign_conflicts=list(dict.fromkeys(conflicts))
+    )
+
+
+def _close(a: float, b: float) -> bool:
+    return abs(a - b) <= max(REL_TOL * abs(a), 1e-9)
 
 
 def input_matches_evidence(value: float, evidence: Evidence) -> bool:
     """Vrai si la valeur passée à un calcul figure bien dans la preuve citée."""
-    sources = _source_values([evidence], [])
-    return any(abs(abs(value) - s) <= max(REL_TOL * abs(value), 1e-9) for s in sources)
+    if any(_close(abs(value), s) for s in _source_values([evidence], [])):
+        return True
+    # Un tableau en millions (« 5,207 ») peut être passé en valeur brute (5 207 000 000).
+    # La tolérance d'échelle ne vaut que pour de vrais montants : une année, un jour de date
+    # ou un petit entier mis à l'échelle laisserait passer n'importe quelle valeur
+    amounts = [
+        v
+        for m in parse_numbers(evidence.text)
+        if not _skippable(m)
+        for v in m.variants(allow_unscaled=True)
+    ]
+    scaled = [abs(value) / step for step in _SCALE_STEPS[1:]]
+    return any(_close(c, s) for c in scaled for s in amounts)
 
 
 def evidence_for_numbers(text: str, evidence: list[Evidence]) -> list[str]:

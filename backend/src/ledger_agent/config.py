@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     # API : configuration d'agent servie (un nom de evaluation/configs) et origines autorisées
     api_config: str = "agent"
     cors_origins: str = "http://localhost:3000"
+    # Questions par visiteur et par heure sur le site public ; 0 désactive la limite
+    api_questions_per_hour: int = 20
 
     @field_validator("data_dir", mode="before")
     @classmethod
