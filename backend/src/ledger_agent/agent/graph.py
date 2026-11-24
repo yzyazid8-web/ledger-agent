@@ -7,6 +7,7 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from ledger_agent.agent.answer import answer_event, jsonable, pipeline_answer
 from ledger_agent.agent.nodes import (
     AgentRuntime,
     AgentState,
@@ -16,9 +17,7 @@ from ledger_agent.agent.nodes import (
     make_synthesize_node,
     make_verify_node,
 )
-from ledger_agent.answer_format import extract_final_answer, is_abstention
-from ledger_agent.pipeline import PipelineAnswer, RetrievedPage
-from ledger_agent.retrieval.types import SearchFilters, SearchOutcome
+from ledger_agent.pipeline import PipelineAnswer
 
 
 def _node(fn: Callable[[AgentState], dict[str, Any]]) -> Any:
@@ -60,17 +59,6 @@ def build_graph(rt: AgentRuntime) -> CompiledStateGraph:  # type: ignore[type-ar
     return graph.compile()
 
 
-def _to_search_outcome(state: dict[str, Any]) -> SearchOutcome | None:
-    result = state.get("first_search")
-    if result is None:
-        return None
-    return SearchOutcome(
-        results=[],
-        requested=SearchFilters(**result.requested_filters) if result.requested_filters else None,
-        applied=SearchFilters(**result.applied_filters) if result.applied_filters else None,
-    )
-
-
 class FinancialAgent:
     def __init__(self, rt: AgentRuntime) -> None:
         self._graph = build_graph(rt)
@@ -98,85 +86,10 @@ class FinancialAgent:
                 continue
             for update in chunk.values():
                 for event in (update or {}).get("trace", []):
-                    yield {"type": "step", **_jsonable(event)}
+                    yield {"type": "step", **jsonable(event)}
         yield answer_event(final, time.perf_counter() - started)
 
     def run(self, question: str) -> PipelineAnswer:
         started = time.perf_counter()
         state = self.invoke(question)
         return pipeline_answer(state, time.perf_counter() - started)
-
-
-def _cited(state: dict[str, Any]) -> list[str]:
-    # Agent ReAct : citations transmises avec submit_answer ; workflow : sortie de la synthèse
-    if "cited" in state:
-        return list(state["cited"] or [])
-    synthesis = state.get("synthesis")
-    return list(synthesis.cited) if synthesis else []
-
-
-def pipeline_answer(state: dict[str, Any], elapsed_s: float) -> PipelineAnswer:
-    """Réponse au format commun de l'évaluation, quel que soit le type d'agent."""
-    evidence = state.get("evidence", [])
-    passages = [e for e in evidence if e.kind == "passage"]
-    cited_ids = set(_cited(state))
-    text = state.get("text", "")
-    trace = [*state.get("trace", []), {"node": "total", "ms": round(elapsed_s * 1000)}]
-    return PipelineAnswer(
-        text=text,
-        abstained=bool(state.get("abstained")) or is_abstention(text),
-        retrieved=[
-            RetrievedPage(e.chunk_id or "", e.doc_name or "", e.page_index or 0, e.score)
-            for e in passages
-        ],
-        cited=[(e.doc_name or "", e.page_index or 0) for e in passages if e.id in cited_ids],
-        llm_calls=state.get("llm_calls", []),
-        retrieval_s=state.get("retrieval_s", 0.0),
-        search=_to_search_outcome(state),
-        trace=[_jsonable(t) for t in trace],
-    )
-
-
-EVIDENCE_PREVIEW_CHARS = 1500
-
-
-def answer_event(state: dict[str, Any], elapsed_s: float) -> dict[str, Any]:
-    """Réponse finale avec ses preuves et ses calculs, prête à afficher dans l'interface."""
-    text = state.get("text", "")
-    abstained = bool(state.get("abstained")) or is_abstention(text)
-    calculations: list[dict[str, Any]] = state.get("calculations") or next(
-        (t["calculations"] for t in reversed(state.get("trace", [])) if "calculations" in t), []
-    )
-    calls = state.get("llm_calls", [])
-    return {
-        "type": "answer",
-        "text": text,
-        "final_answer": None if abstained else extract_final_answer(text),
-        "abstained": abstained,
-        "cited": _cited(state),
-        "evidence": [
-            {
-                "id": e.id,
-                "kind": e.kind,
-                "source_id": e.source_id,
-                "title": e.title,
-                "text": e.text[:EVIDENCE_PREVIEW_CHARS],
-                "value": e.value,
-                "doc_name": e.doc_name,
-                "page_number": e.page_index + 1 if e.page_index is not None else None,
-            }
-            for e in state.get("evidence", [])
-        ],
-        "calculations": calculations,
-        "llm_calls": len(calls),
-        "tokens": sum(c.prompt_tokens + c.completion_tokens for c in calls),
-        "elapsed_s": round(elapsed_s, 2),
-    }
-
-
-def _jsonable(event: dict[str, Any]) -> dict[str, Any]:
-    # Les traces sont enregistrées dans predictions.jsonl : uniquement des types JSON
-    return {
-        k: v if isinstance(v, str | int | float | bool | list | dict | type(None)) else str(v)
-        for k, v in event.items()
-    }
