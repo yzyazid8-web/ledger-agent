@@ -133,6 +133,31 @@ flowchart LR
 
 Le guide pas à pas est dans [deploiement.md](deploiement.md).
 
+## Observabilité en production
+
+Chaque question posée au site devient une **trace Langfuse**, consultable ensuite dans
+l'interface de Langfuse :
+
+```
+question (trace)                               session anonyme · configuration · modèle
+├─ étapes du graphe LangGraph                  tours de l'agent, outils, vérification
+│   └─ appel au modèle (generation)            messages, réponse, tokens, durée, cache
+└─ notes                                       abstention · tours · tokens · refus du vérificateur
+```
+
+- **Seul point de contact** : [`observability.py`](../backend/src/ledger_agent/observability.py).
+  Le reste du code ne connaît qu'un protocole `Tracer`.
+- **Deux sources** : les étapes du graphe arrivent par le *callback* LangGraph de Langfuse ;
+  les appels au modèle sont déclarés par `TracedLLM`, car le projet utilise son propre client
+  HTTP vers Groq, que ce *callback* ne voit pas.
+- **Inactif par défaut** : sans les deux clés Langfuse, aucun suivi. L'évaluation et les tests
+  n'envoient jamais rien ; seul le service de l'API active le suivi.
+- **Sans risque pour les réponses** : l'envoi se fait en arrière-plan, par lots ; une panne de
+  Langfuse est journalisée et ignorée.
+- **Confidentialité** : la question et les échanges avec le modèle sont envoyés, mais **jamais
+  l'adresse du visiteur**. La session est un hachage salé qui change chaque jour et à chaque
+  redémarrage ; le site prévient que les questions peuvent être enregistrées.
+
 ## Dépendances entre modules
 
 Le code servi aux utilisateurs ne dépend ni du workflow de comparaison, ni du banc d'évaluation :
@@ -167,6 +192,7 @@ flowchart TD
 | Faits XBRL | [`tools/financial_facts.py`](../backend/src/ledger_agent/tools/financial_facts.py) |
 | Recherche dans les rapports | [`tools/search_filings.py`](../backend/src/ledger_agent/tools/search_filings.py), [`retrieval/`](../backend/src/ledger_agent/retrieval) |
 | Ingestion | [`ingestion/`](../backend/src/ledger_agent/ingestion) |
+| Suivi en production (Langfuse) | [`observability.py`](../backend/src/ledger_agent/observability.py) |
 | Clients LLM, cache, débit | [`llm/`](../backend/src/ledger_agent/llm), [`common/rate_limit.py`](../backend/src/ledger_agent/common/rate_limit.py) |
 | API | [`api/main.py`](../backend/src/ledger_agent/api/main.py), [`api/service.py`](../backend/src/ledger_agent/api/service.py) |
 | Assemblage des composants (API et évaluation) | [`assembly.py`](../backend/src/ledger_agent/assembly.py), [`run_config.py`](../backend/src/ledger_agent/run_config.py) |

@@ -15,6 +15,7 @@ from ledger_agent.ingestion.indexer import FastEmbedEmbedder
 from ledger_agent.llm.cache import CachedLLM
 from ledger_agent.llm.openai_compatible import OpenAICompatibleClient
 from ledger_agent.llm.types import LLMClient
+from ledger_agent.observability import TracedLLM, Tracer
 from ledger_agent.retrieval.dense import DenseRetriever
 from ledger_agent.retrieval.hybrid import AutoFilterRetriever, HybridRetriever
 from ledger_agent.retrieval.lexical import LexicalRetriever
@@ -26,7 +27,9 @@ from ledger_agent.tools.financial_facts import FactStore
 from ledger_agent.tools.search_filings import SearchFilingsTool
 
 
-def build_llm(config: LLMConfig, settings: Settings, stack: ExitStack) -> LLMClient:
+def build_llm(
+    config: LLMConfig, settings: Settings, stack: ExitStack, tracer: Tracer | None = None
+) -> LLMClient:
     key = settings.groq_api_key.get_secret_value() if settings.groq_api_key else ""
     client = OpenAICompatibleClient(
         key,
@@ -37,7 +40,8 @@ def build_llm(config: LLMConfig, settings: Settings, stack: ExitStack) -> LLMCli
     stack.callback(client.close)
     cached = CachedLLM(client, settings.data_dir / "cache" / "llm.sqlite")
     stack.callback(cached.close)
-    return cached
+    # Le suivi enrobe le cache : les réponses servies par le cache sont aussi enregistrées
+    return TracedLLM(cached, tracer) if tracer is not None else cached
 
 
 def build_retriever(config: RetrievalConfig, settings: Settings, stack: ExitStack) -> Retriever:
@@ -67,8 +71,13 @@ def build_retriever(config: RetrievalConfig, settings: Settings, stack: ExitStac
 
 
 def build_agent(
-    config: RunConfig, settings: Settings, retriever: Retriever, stack: ExitStack
+    config: RunConfig,
+    settings: Settings,
+    retriever: Retriever,
+    stack: ExitStack,
+    tracer: Tracer | None = None,
 ) -> FinancialAgent | ReactAgent:
+    # `tracer` : suivi en production des appels au modèle ; l'évaluation n'en passe jamais
     agent = config.agent
     if agent is None:
         raise ValueError("section [agent] manquante")
@@ -78,7 +87,7 @@ def build_agent(
         stack.callback(facts.close)
     if agent.mode == "react":
         return ReactAgent(
-            llm=build_llm(config.llm, settings, stack),
+            llm=build_llm(config.llm, settings, stack, tracer),
             search=SearchFilingsTool(retriever),
             facts=facts,
             config=ReactConfig(
@@ -93,8 +102,8 @@ def build_agent(
     if agent.planner_llm is None:
         raise ValueError("le mode « workflow » exige [agent.planner_llm]")
     runtime = AgentRuntime(
-        planner_llm=build_llm(agent.planner_llm, settings, stack),
-        writer_llm=build_llm(config.llm, settings, stack),
+        planner_llm=build_llm(agent.planner_llm, settings, stack, tracer),
+        writer_llm=build_llm(config.llm, settings, stack, tracer),
         search=SearchFilingsTool(retriever),
         facts=facts,
         config=AgentConfig(

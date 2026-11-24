@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -70,14 +71,17 @@ class FinancialAgent:
         )
         return state
 
-    def stream(self, question: str) -> Iterator[dict[str, Any]]:
+    def stream(self, question: str, callbacks: list[Any] | None = None) -> Iterator[dict[str, Any]]:
         """Un événement « step » par étape franchie, puis un événement « answer » final."""
         started = time.perf_counter()
         final: dict[str, Any] = {}
+        run_config: RunnableConfig = {"recursion_limit": RECURSION_LIMIT}
+        if callbacks:
+            run_config["callbacks"] = callbacks
         # Avec plusieurs modes, LangGraph renvoie des paires (mode, contenu)
         chunks: Iterator[tuple[str, dict[str, Any]]] = self._graph.stream(  # type: ignore[assignment]
             {"question": question, "llm_calls": [], "trace": []},
-            {"recursion_limit": RECURSION_LIMIT},
+            run_config,
             stream_mode=["updates", "values"],
         )
         for mode, chunk in chunks:

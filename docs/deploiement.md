@@ -95,6 +95,24 @@ Puis, dans GitHub → **Settings** du dépôt :
    `AZURE_TENANT_ID` et `AZURE_SUBSCRIPTION_ID` avec les valeurs affichées.
 3. Onglet **Variables** : ajouter `AZURE_RESOURCE_GROUP` = `rg-ledger-agent`.
 
+## 4. Suivi en production avec Langfuse (facultatif)
+
+1. Sur Langfuse Cloud : créer un projet, puis une paire de clés d'API (clé publique et clé
+   secrète). Noter l'adresse du serveur affichée (`https://cloud.langfuse.com` pour l'Europe).
+2. Ajouter la clé secrète comme secret de l'API, puis les variables d'environnement :
+
+   ```powershell
+   az containerapp secret set -n ledger-agent-api -g rg-ledger-agent `
+     --secrets langfuse-secret-key=<clé secrète>
+   az containerapp update -n ledger-agent-api -g rg-ledger-agent `
+     --set-env-vars LANGFUSE_PUBLIC_KEY=<clé publique> LANGFUSE_SECRET_KEY=secretref:langfuse-secret-key LANGFUSE_HOST=https://cloud.langfuse.com
+   ```
+
+3. Poser une question sur le site : elle apparaît dans Langfuse sous quelques secondes.
+
+Pour un nouveau déploiement complet, les paramètres `langfusePublicKey`, `langfuseSecretKey` et
+`langfuseHost` du fichier Bicep font la même chose. Sans clés, le suivi reste désactivé.
+
 ## Coûts
 
 - Container Apps (plan Consommation) : une part gratuite mensuelle (180 000 vCPU-secondes,
