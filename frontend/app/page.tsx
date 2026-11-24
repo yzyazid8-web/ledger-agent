@@ -140,6 +140,11 @@ export default function Home() {
             {running ? "Analyse…" : "Demander"}
           </button>
         </form>
+        {/* Le suivi en production (Langfuse) conserve les questions posées : on le dit */}
+        <p className="-mt-2 text-xs text-muted">
+          Les questions posées peuvent être enregistrées pour améliorer l&apos;agent. N&apos;y saisis pas
+          d&apos;informations personnelles.
+        </p>
 
         {asked && (
           <div className="rounded-xl bg-panel-2 px-4 py-3 text-sm">

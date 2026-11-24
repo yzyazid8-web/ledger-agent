@@ -89,7 +89,7 @@ def create_app(service_factory: ServiceFactory | None = None) -> FastAPI:
         """Diffuse les étapes de l'agent au fil de l'eau, puis la réponse finale (SSE)."""
         events: Iterator[dict[str, Any]]
         if limiter.allow(visitor_key(request)):
-            events = service(request).stream(body.question)
+            events = service(request).stream(body.question, visitor=visitor_key(request))
         else:
             # Événement d'erreur plutôt qu'un code HTTP : l'interface affiche le message tel quel
             events = iter([{"type": "error", "code": "limit", "message": limit_message}])
@@ -106,7 +106,7 @@ def create_app(service_factory: ServiceFactory | None = None) -> FastAPI:
         if not limiter.allow(visitor_key(request)):
             raise HTTPException(status_code=429, detail=limit_message)
         steps: list[dict[str, Any]] = []
-        for event in service(request).stream(body.question):
+        for event in service(request).stream(body.question, visitor=visitor_key(request)):
             if event["type"] == "error":
                 status = 429 if event.get("code") == "quota" else 502
                 raise HTTPException(status_code=status, detail=event["message"])

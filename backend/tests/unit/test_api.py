@@ -37,7 +37,7 @@ class FakeService:
     def companies(self) -> list[dict[str, str]]:
         return [{"ticker": "MMM", "name": "3M"}]
 
-    def stream(self, question: str) -> Iterator[dict[str, Any]]:
+    def stream(self, question: str, visitor: str | None = None) -> Iterator[dict[str, Any]]:
         self.questions.append(question)
         yield from self.events
 

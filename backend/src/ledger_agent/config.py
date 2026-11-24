@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     langfuse_public_key: str | None = None
     langfuse_secret_key: SecretStr | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
+    # Part des questions envoyées à Langfuse (1.0 : toutes), pour limiter le volume
+    langfuse_sample_rate: float = 1.0
 
     # Chemins et journalisation
     data_dir: Path = REPO_ROOT / "data"

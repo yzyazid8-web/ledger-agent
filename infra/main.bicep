@@ -21,6 +21,40 @@ param groqApiKey string
 @description('Configuration d\'agent servie (nom d\'un fichier de evaluation/configs)')
 param apiConfig string = 'agent'
 
+// Suivi en production (Langfuse) : facultatif. Sans clé secrète, rien n'est envoyé
+@description('Clé publique Langfuse ; vide pour désactiver le suivi')
+param langfusePublicKey string = ''
+
+@description('Clé secrète Langfuse, stockée comme secret de l\'application')
+@secure()
+param langfuseSecretKey string = ''
+
+@description('Adresse du serveur Langfuse (région du projet)')
+param langfuseHost string = 'https://cloud.langfuse.com'
+
+var tracingEnabled = !empty(langfusePublicKey) && !empty(langfuseSecretKey)
+// Un secret Container Apps ne peut pas être vide : celui de Langfuse n'existe que s'il est fourni
+var tracingSecrets = tracingEnabled ? [
+  {
+    name: 'langfuse-secret-key'
+    value: langfuseSecretKey
+  }
+] : []
+var tracingEnv = tracingEnabled ? [
+  {
+    name: 'LANGFUSE_PUBLIC_KEY'
+    value: langfusePublicKey
+  }
+  {
+    name: 'LANGFUSE_SECRET_KEY'
+    secretRef: 'langfuse-secret-key'
+  }
+  {
+    name: 'LANGFUSE_HOST'
+    value: langfuseHost
+  }
+] : []
+
 @description('Identifiant d\'un environnement Container Apps existant à réutiliser ; vide pour en créer un')
 param existingEnvironmentId string = ''
 
@@ -46,12 +80,12 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 8000
         transport: 'http'
       }
-      secrets: [
+      secrets: concat([
         {
           name: 'groq-api-key'
           value: groqApiKey
         }
-      ]
+      ], tracingSecrets)
     }
     template: {
       containers: [
@@ -62,7 +96,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json('1.0')
             memory: '2Gi'
           }
-          env: [
+          env: concat([
             {
               name: 'GROQ_API_KEY'
               secretRef: 'groq-api-key'
@@ -71,7 +105,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'API_CONFIG'
               value: apiConfig
             }
-          ]
+          ], tracingEnv)
           probes: [
             {
               // Chargement du modèle et des index : jusqu'à ~2 minutes tolérées au démarrage

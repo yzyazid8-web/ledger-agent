@@ -52,4 +52,7 @@ class Pipeline(Protocol):
 class StreamingPipeline(Pipeline, Protocol):
     """Agent servi par l'API : il répond d'un bloc (évaluation) ou étape par étape (interface)."""
 
-    def stream(self, question: str) -> Iterator[dict[str, Any]]: ...
+    # `callbacks` : callbacks LangGraph du suivi en production (Langfuse), facultatifs
+    def stream(
+        self, question: str, callbacks: list[Any] | None = None
+    ) -> Iterator[dict[str, Any]]: ...

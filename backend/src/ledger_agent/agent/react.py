@@ -423,13 +423,15 @@ class ReactAgent:
             ],
         }
 
-    def stream(self, question: str) -> Iterator[dict[str, Any]]:
+    def stream(self, question: str, callbacks: list[Any] | None = None) -> Iterator[dict[str, Any]]:
         started = time.perf_counter()
         box, graph, initial = self._start(question)
         final: dict[str, Any] = {}
-        for mode, chunk in graph.stream(
-            initial, {"recursion_limit": RECURSION_LIMIT}, stream_mode=["updates", "values"]
-        ):
+        # Les callbacks (suivi en production) observent le graphe sans en changer le déroulé
+        run_config: dict[str, Any] = {"recursion_limit": RECURSION_LIMIT}
+        if callbacks:
+            run_config["callbacks"] = callbacks
+        for mode, chunk in graph.stream(initial, run_config, stream_mode=["updates", "values"]):
             if mode == "values":
                 final = chunk
                 continue

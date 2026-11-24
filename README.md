@@ -84,6 +84,8 @@ question ─► agent ──appels d'outils──► outils ──observations�
 **API** (`api/`) : `POST /chat` diffuse chaque étape de l'agent en direct (Server-Sent Events),
 puis la réponse avec ses preuves et ses calculs. `POST /ask` renvoie le tout en une seule réponse
 JSON, et `GET /companies` liste les entreprises couvertes.
+Si des clés Langfuse sont fournies, chaque question devient une trace consultable dans
+Langfuse (étapes, appels au modèle, tokens, notes), sans jamais envoyer l'adresse du visiteur.
 
 **Évaluation** (`evaluation/`) : voir la méthodologie ci-dessous.
 
@@ -119,6 +121,9 @@ Le schéma complet (agent, outils, vérification, déploiement) est dans
   gratuits suffisants.
 - **Un déploiement sans secret durable.** GitHub Actions publie les images sur GHCR et déploie
   sur Azure Container Apps par OIDC. Seule l'interface est publique ; l'API reste interne.
+- **Un suivi en production séparé de l'évaluation.** L'évaluation hors ligne mesure la qualité
+  sur un jeu de questions fixe ; Langfuse montre ce qui se passe réellement sur le site
+  (questions, échecs, tokens). Il est inactif sans clés et n'est jamais utilisé en évaluation.
 
 ## Méthodologie d'évaluation
 
