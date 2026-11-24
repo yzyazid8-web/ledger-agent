@@ -133,11 +133,33 @@ flowchart LR
 
 Le guide pas à pas est dans [deploiement.md](deploiement.md).
 
+## Dépendances entre modules
+
+Le code servi aux utilisateurs ne dépend ni du workflow de comparaison, ni du banc d'évaluation :
+
+```mermaid
+flowchart TD
+    API["api/ (service)"] --> ASM["assembly.py<br/>run_config.py"]
+    EVAL["evaluation/"] --> ASM
+    ASM --> REACT["agent/react.py"]
+    ASM --> WF["agent/graph.py<br/>(workflow)"]
+    REACT --> ANS["agent/answer.py"]
+    WF --> ANS
+```
+
+- `assembly.py` construit le modèle, la recherche et l'agent à partir d'une configuration ;
+  l'API et l'évaluation l'utilisent toutes les deux.
+- `agent/answer.py` met en forme les réponses pour les deux agents : l'agent ReAct n'importe rien
+  du workflow.
+- L'API ne connaît les agents qu'à travers un protocole (`StreamingPipeline` : répondre d'un bloc
+  ou étape par étape), sans nommer d'architecture précise.
+
 ## Où trouver quoi
 
 | Élément | Fichier |
 |---|---|
 | Boucle ReAct | [`agent/react.py`](../backend/src/ledger_agent/agent/react.py) |
+| Format commun des réponses (deux agents) | [`agent/answer.py`](../backend/src/ledger_agent/agent/answer.py) |
 | Outils exposés au modèle | [`agent/toolbox.py`](../backend/src/ledger_agent/agent/toolbox.py) |
 | Vérificateur de chiffres | [`agent/verify.py`](../backend/src/ledger_agent/agent/verify.py) |
 | Workflow à étapes fixes | [`agent/graph.py`](../backend/src/ledger_agent/agent/graph.py), [`agent/nodes.py`](../backend/src/ledger_agent/agent/nodes.py) |
@@ -147,6 +169,7 @@ Le guide pas à pas est dans [deploiement.md](deploiement.md).
 | Ingestion | [`ingestion/`](../backend/src/ledger_agent/ingestion) |
 | Clients LLM, cache, débit | [`llm/`](../backend/src/ledger_agent/llm), [`common/rate_limit.py`](../backend/src/ledger_agent/common/rate_limit.py) |
 | API | [`api/main.py`](../backend/src/ledger_agent/api/main.py), [`api/service.py`](../backend/src/ledger_agent/api/service.py) |
+| Assemblage des composants (API et évaluation) | [`assembly.py`](../backend/src/ledger_agent/assembly.py), [`run_config.py`](../backend/src/ledger_agent/run_config.py) |
 | Interface | [`frontend/app/page.tsx`](../frontend/app/page.tsx), [`frontend/components/`](../frontend/components) |
 | Évaluation | [`evaluation/`](../backend/src/ledger_agent/evaluation), [`evaluation/configs/`](../evaluation/configs) |
 | Référence RAG classique | [`baselines/naive_rag.py`](../backend/src/ledger_agent/baselines/naive_rag.py) |

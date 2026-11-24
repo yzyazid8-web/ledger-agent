@@ -1,5 +1,6 @@
 """Format de sortie commun à tous les systèmes évalués (RAG naïf, agent)."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -46,3 +47,9 @@ class PipelineAnswer:
 
 class Pipeline(Protocol):
     def run(self, question: str) -> PipelineAnswer: ...
+
+
+class StreamingPipeline(Pipeline, Protocol):
+    """Agent servi par l'API : il répond d'un bloc (évaluation) ou étape par étape (interface)."""
+
+    def stream(self, question: str) -> Iterator[dict[str, Any]]: ...
