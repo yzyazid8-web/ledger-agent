@@ -87,6 +87,39 @@ JSON, et `GET /companies` liste les entreprises couvertes.
 
 **Évaluation** (`evaluation/`) : voir la méthodologie ci-dessous.
 
+## Choix de conception
+
+Le schéma complet (agent, outils, vérification, déploiement) est dans
+[docs/architecture.md](docs/architecture.md).
+
+- **Un agent ReAct plutôt qu'un parcours fixe.** Une question financière ne se traite pas
+  toujours de la même façon : un chiffre publié se lit dans les données XBRL, une explication se
+  cherche dans le rapport, une évolution demande deux années puis un calcul. Le modèle choisit
+  donc ses outils et voit leurs résultats avant de décider de la suite. Un workflow à étapes
+  fixes est conservé comme point de comparaison dans l'évaluation.
+- **Des outils typés plutôt que du SQL écrit par le modèle.** `get_fact` prend une entreprise,
+  un concept et une période : le modèle ne peut ni inventer une colonne, ni écrire une requête
+  fausse ou dangereuse. Les requêtes sont paramétrées, la base est ouverte en lecture seule.
+- **Le modèle ne calcule jamais.** Toute opération passe par une calculatrice qui analyse
+  l'expression sans l'exécuter. Chaque entrée cite sa source (`E3`, ou un calcul précédent `C1`),
+  et sa valeur est contrôlée contre cette source avant le calcul.
+- **Une vérification par règles plutôt que par un second LLM.** Contrôler qu'un nombre vient
+  d'une preuve est une question de correspondance, pas de jugement : des règles le font de façon
+  déterministe, testable et gratuite. Un LLM vérificateur pourrait lui-même se tromper.
+- **L'abstention comme résultat légitime.** Sans source pour un chiffre, l'agent ne répond pas.
+  Une réponse fausse coûte plus cher qu'une absence de réponse.
+- **Des données officielles en plus du texte.** Les chiffres XBRL de la SEC servent de source
+  de référence pour les postes publiés ; la recherche dans les rapports couvre le reste.
+- **Recherche hybride.** Les vecteurs capturent le sens, BM25 les termes exacts (noms de postes,
+  tickers, années) ; les deux sont fusionnés (RRF). L'agent fixe lui-même l'entreprise et
+  l'exercice de chaque recherche, et un élargissement des filtres est toujours signalé.
+- **100 % gratuit, sur CPU.** Groq pour le modèle (`gpt-oss-120b`), Gemini pour le juge
+  d'évaluation (une autre famille de modèles), embeddings ONNX sans GPU, Qdrant en local. Le
+  cache des appels, le limiteur de débit et la reprise des évaluations rendent les quotas
+  gratuits suffisants.
+- **Un déploiement sans secret durable.** GitHub Actions publie les images sur GHCR et déploie
+  sur Azure Container Apps par OIDC. Seule l'interface est publique ; l'API reste interne.
+
 ## Méthodologie d'évaluation
 
 - **Corpus** : les 84 documents cités par les 150 questions publiques de FinanceBench, dans un

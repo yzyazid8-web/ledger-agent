@@ -9,10 +9,16 @@ import { fetchCompanies, streamChat } from "@/lib/api";
 import type { AnswerEvent, Company, ErrorEvent, StepEvent } from "@/lib/types";
 
 type Status = "idle" | "running" | "done" | "error";
+// État de l'API au chargement : sur Azure, elle s'arrête sans visiteur et met jusqu'à une minute
+// à redémarrer. On réessaie pendant ce temps au lieu d'afficher tout de suite une erreur
+type ApiState = "checking" | "waking" | "ready" | "down";
+const WAKE_RETRY_MS = 5000;
+const WAKE_TIMEOUT_MS = 120_000;
+const SLOW_START_MS = 2500;
 
 export default function Home() {
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [apiDown, setApiDown] = useState(false);
+  const [api, setApi] = useState<ApiState>("checking");
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState("");
   const [status, setStatus] = useState<Status>("idle");
@@ -23,14 +29,38 @@ export default function Home() {
   const abort = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    fetchCompanies()
-      .then(setCompanies)
-      .catch(() => setApiDown(true));
+    let cancelled = false;
+    const started = Date.now();
+    // Sans réponse rapide, on prévient le visiteur que le serveur démarre
+    const slow = setTimeout(() => !cancelled && setApi((a) => (a === "checking" ? "waking" : a)), SLOW_START_MS);
+    async function load() {
+      while (!cancelled) {
+        try {
+          const list = await fetchCompanies();
+          if (cancelled) return;
+          setCompanies(list);
+          setApi("ready");
+          return;
+        } catch {
+          if (Date.now() - started > WAKE_TIMEOUT_MS) {
+            if (!cancelled) setApi("down");
+            return;
+          }
+          if (!cancelled) setApi("waking");
+          await new Promise((resolve) => setTimeout(resolve, WAKE_RETRY_MS));
+        }
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+      clearTimeout(slow);
+    };
   }, []);
 
   async function ask(text: string) {
     const q = text.trim();
-    if (q.length < 3 || status === "running") return;
+    if (q.length < 3 || status === "running" || api !== "ready") return;
     abort.current?.abort();
     abort.current = new AbortController();
     setAsked(q);
@@ -59,16 +89,32 @@ export default function Home() {
   }
 
   const running = status === "running";
+  // Pas de question tant que le serveur n'a pas répondu : elle échouerait pendant le démarrage
+  const blocked = running || api !== "ready";
 
   return (
     <main className="mx-auto grid w-full max-w-[1500px] flex-1 gap-5 px-4 py-5 lg:grid-cols-[250px_minmax(0,1fr)_380px]">
-      <Sidebar companies={companies} onPick={ask} disabled={running} />
+      <Sidebar companies={companies} onPick={ask} disabled={blocked} />
 
       <section className="flex min-w-0 flex-col gap-4">
-        {apiDown && (
+        {api === "waking" && (
+          <div className="flex items-center gap-3 rounded-lg bg-accent-soft p-3 text-sm text-accent">
+            <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+            <span>
+              Démarrage du serveur, environ 30 secondes à une minute. Le site s&apos;arrête quand personne ne
+              l&apos;utilise, pour rester gratuit. La page se met à jour toute seule.
+            </span>
+          </div>
+        )}
+        {api === "down" && (
           <div className="rounded-lg bg-err-soft p-3 text-sm text-err">
-            L&apos;API ne répond pas. En local, lance-la avec <code className="font-mono">uv run poe api</code>{" "}
-            (adresse réglable avec la variable <code className="font-mono">API_URL</code>).
+            Le serveur ne répond pas pour le moment. Réessaie dans quelques minutes.
+            {process.env.NODE_ENV === "development" && (
+              <>
+                {" "}
+                En local, lance l&apos;API avec <code className="font-mono">uv run poe api</code>.
+              </>
+            )}
           </div>
         )}
 
@@ -88,7 +134,7 @@ export default function Home() {
           />
           <button
             type="submit"
-            disabled={running || question.trim().length < 3}
+            disabled={blocked || question.trim().length < 3}
             className="rounded-xl bg-accent px-5 text-sm font-medium text-white disabled:opacity-50"
           >
             {running ? "Analyse…" : "Demander"}
