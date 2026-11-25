@@ -226,7 +226,8 @@ def test_a_rejected_tool_call_does_not_block_the_next_call_for_a_minute() -> Non
     rejected = httpx.Response(
         400, json={"error": {"code": "tool_use_failed", "message": "missing properties"}}
     )
-    responses = iter([rejected, chat_response("ok")])
+    # Deux refus : la nouvelle tentative silencieuse échoue aussi, l'erreur remonte à l'agent
+    responses = iter([rejected, rejected, chat_response("ok")])
     sleeps: list[float] = []
     client = OpenAICompatibleClient(
         "key",
@@ -273,3 +274,31 @@ def test_unparseable_model_output_is_reported_as_a_correctable_error() -> None:
 
     with pytest.raises(LLMToolCallError, match="Parsing failed"):
         client.complete(MESSAGES, CompletionParams())
+
+
+def test_a_one_off_malformed_output_is_retried_silently() -> None:
+    # Cas observé avec gpt-oss : faux outil « commentary » une fois, puis une réponse correcte
+    rejected = httpx.Response(
+        400,
+        json={
+            "error": {
+                "code": "tool_use_failed",
+                "message": "attempted to call tool 'commentary' which was not in request.tools",
+            }
+        },
+    )
+    responses = iter([rejected, chat_response("ok")])
+    calls: list[int] = []
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return next(responses)
+
+    client = OpenAICompatibleClient(
+        "key", "m", tokens_per_minute=None, transport=httpx.MockTransport(handler)
+    )
+
+    result = client.complete(MESSAGES, CompletionParams())
+
+    assert result.text == "ok"
+    assert len(calls) == 2

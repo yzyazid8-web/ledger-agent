@@ -30,6 +30,8 @@ CHARS_PER_TOKEN = 4
 
 
 MALFORMED_OUTPUT = ("tool_use_failed", "output_parse_failed")
+# Nouvelles tentatives silencieuses sur une sortie mal formée, avant de prévenir l'agent
+MALFORMED_RETRIES = 1
 
 
 def _tool_error_message(response: httpx.Response) -> str:
@@ -124,6 +126,7 @@ class OpenAICompatibleClient:
 
     def complete(self, messages: list[Message], params: CompletionParams) -> LLMResponse:
         body = self._body(messages, params)
+        malformed_retries = 0
         for attempt in range(self._max_retries + 1):
             is_last_attempt = attempt == self._max_retries
             reservation = (
@@ -155,6 +158,14 @@ class OpenAICompatibleClient:
             # Sortie mal formée du modèle (appel d'outil invalide ou texte illisible) : il peut
             # se corriger au tour suivant, ce n'est pas une panne du fournisseur
             if response.status_code == 400 and any(c in response.text for c in MALFORMED_OUTPUT):
+                # Ces ratés de gpt-oss (JSON invalide, faux outil « commentary ») sont souvent
+                # ponctuels : une nouvelle tentative identique évite de déranger l'agent
+                if malformed_retries < MALFORMED_RETRIES and not is_last_attempt:
+                    malformed_retries += 1
+                    logger.info(
+                        "Sortie mal formée, nouvelle tentative : %s", _tool_error_message(response)
+                    )
+                    continue
                 raise LLMToolCallError(_tool_error_message(response))
             if response.is_error:
                 raise LLMError(f"HTTP {response.status_code} : {sanitize(response.text)}")

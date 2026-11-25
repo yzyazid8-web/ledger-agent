@@ -41,8 +41,13 @@ _NEGATIVE_WORDS = re.compile(
     re.IGNORECASE,
 )
 NEGATIVE_WINDOW = 40
-# Mot qui suit directement la quantité et en fait un écart négatif : « 13 fewer stores »
-_NEGATIVE_AFTER = re.compile(r"\s*(?:fewer|less|lower)\b", re.IGNORECASE)
+# Mot qui suit directement la quantité et en fait un écart négatif : « 13 fewer stores »,
+# « a 3.3 % decline », « a 5 % drop » (cas réel : une baisse juste refusée comme signe inversé)
+_NEGATIVE_AFTER = re.compile(
+    r"\s*(?:fewer|less|lower|declin(?:e|es|ed|ing)|decreas(?:e|es|ed|ing)|drop(?:s|ped)?|"
+    r"fall(?:s|ing)?|dip(?:s|ped)?|reduction|loss(?:es)?|contraction|shortfall|deficit)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)

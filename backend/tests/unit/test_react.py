@@ -491,3 +491,21 @@ def test_repeating_a_failed_call_gets_a_hint_to_change_approach() -> None:
     second = json.loads(llm.seen[2][-1]["content"] or "{}")
     assert "hint" not in first
     assert "already made this exact call" in second["hint"]
+
+
+# Cas réel : « a 3.3 % decline », le mot de baisse suit le nombre
+
+
+def test_a_decline_word_after_the_number_is_a_negative_change() -> None:
+    results = [
+        calculate("(b - a) / a * 100", {"a": 1420, "b": 1373}),  # -3.31
+        calculate("(c - b) / b * 100", {"b": 1373, "c": 1577}),  # 14.86
+    ]
+    text = (
+        "After a 3.3\u202f% decline from FY\u202f2016 to FY\u202f2017, "
+        "capital spending rose 14.9\u202f% in FY\u202f2018."
+    )
+
+    assert verify_numbers(text, [], results).ok
+    assert verify_numbers("a 3.3% drop", [], results).ok
+    assert verify_numbers("a 3.3% increase", [], results).sign_conflicts
