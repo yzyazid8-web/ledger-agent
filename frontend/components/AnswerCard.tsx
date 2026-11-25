@@ -1,4 +1,6 @@
+import { TrendChart } from "@/components/TrendChart";
 import { segment } from "@/lib/provenance";
+import { findTrend } from "@/lib/trend";
 import type { AnswerEvent } from "@/lib/types";
 
 function Text({ text, answer, onCite }: { text: string; answer: AnswerEvent; onCite: (id: string) => void }) {
@@ -50,6 +52,8 @@ function Text({ text, answer, onCite }: { text: string; answer: AnswerEvent; onC
 
 export function AnswerCard({ answer, onCite }: { answer: AnswerEvent; onCite: (id: string) => void }) {
   const reasoning = answer.text.split(/final answer\s*:/i)[0].trim();
+  // Graphique seulement si les preuves forment une série d'au moins trois périodes
+  const trend = answer.abstained ? null : findTrend(answer.evidence, answer.cited);
   return (
     <div className="rise space-y-3 rounded-xl border border-line bg-panel p-4">
       {answer.abstained ? (
@@ -73,6 +77,11 @@ export function AnswerCard({ answer, onCite }: { answer: AnswerEvent; onCite: (i
             <p className="text-sm leading-relaxed text-muted">
               <Text text={reasoning} answer={answer} onCite={onCite} />
             </p>
+          )}
+          {trend && (
+            <div className="rounded-lg border border-line p-3">
+              <TrendChart trend={trend} onSelect={onCite} />
+            </div>
           )}
         </>
       )}
