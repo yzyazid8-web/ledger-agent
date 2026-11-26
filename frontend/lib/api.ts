@@ -1,4 +1,4 @@
-import type { AblationReport, AgentEvent, Company } from "./types";
+import type { AblationReport, AgentEvent, Company, Turn } from "./types";
 
 // Le navigateur passe par le relais de l'interface (app/api/[...path]/route.ts), qui joint l'API
 export const API_URL = "/api";
@@ -19,13 +19,15 @@ export async function fetchBenchmark(split = "dev"): Promise<AblationReport | nu
 // EventSource ne gère que GET : on lit donc le flux SSE de POST /chat à la main
 export async function streamChat(
   question: string,
+  history: Turn[],
   onEvent: (event: AgentEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${API_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    // L'historique voyage avec chaque question : l'API ne garde aucune conversation
+    body: JSON.stringify({ question, history }),
     signal,
   });
   if (!response.ok || !response.body) {

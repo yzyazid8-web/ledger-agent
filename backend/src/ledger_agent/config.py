@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     # Questions par visiteur et par heure sur le site public ; 0 désactive la limite
     api_questions_per_hour: int = 20
+    # Modèle qui reformule une question de suivi en question autonome ;
+    # vide : pas de reformulation
+    api_rewrite_model: str = "openai/gpt-oss-20b"
 
     @field_validator("data_dir", mode="before")
     @classmethod

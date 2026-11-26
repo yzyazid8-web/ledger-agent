@@ -84,6 +84,8 @@ question ─► agent ──appels d'outils──► outils ──observations�
 **API** (`api/`) : `POST /chat` diffuse chaque étape de l'agent en direct (Server-Sent Events),
 puis la réponse avec ses preuves et ses calculs. `POST /ask` renvoie le tout en une seule réponse
 JSON, et `GET /companies` liste les entreprises couvertes.
+Les **questions de suivi** (« et en 2019 ? ») sont reformulées en question autonome par un modèle
+léger avant d'atteindre l'agent ; l'interface affiche la question comprise.
 Si des clés Langfuse sont fournies, chaque question devient une trace consultable dans
 Langfuse (étapes, appels au modèle, tokens, notes), sans jamais envoyer l'adresse du visiteur.
 

@@ -131,6 +131,12 @@ flowchart LR
 - Les applications s'arrêtent sans visiteur (`minReplicas: 0`) : la première requête après une
   pause attend le démarrage du conteneur.
 
+- **Questions de suivi** : le navigateur renvoie les derniers échanges avec chaque question.
+  Un modèle léger (`gpt-oss-20b`, quota séparé) transforme « et en 2019 ? » en question
+  autonome ([`api/conversation.py`](../backend/src/ledger_agent/api/conversation.py)). L'agent ne
+  voit jamais l'historique : il repart d'une question complète et vérifie de nouveau ses preuves.
+  En cas de doute ou d'échec, la question est transmise telle quelle.
+
 Le guide pas à pas est dans [deploiement.md](deploiement.md).
 
 ## Observabilité en production

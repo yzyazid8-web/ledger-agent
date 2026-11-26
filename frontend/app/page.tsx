@@ -6,12 +6,14 @@ import { AnswerCard } from "@/components/AnswerCard";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Sidebar } from "@/components/Sidebar";
 import { fetchCompanies, streamChat } from "@/lib/api";
-import type { AnswerEvent, Company, ErrorEvent, StepEvent } from "@/lib/types";
+import type { AnswerEvent, Company, ErrorEvent, StepEvent, Turn } from "@/lib/types";
 
 type Status = "idle" | "running" | "done" | "error";
 // État de l'API au chargement : sur Azure, elle s'arrête sans visiteur et met jusqu'à une minute
 // à redémarrer. On réessaie pendant ce temps au lieu d'afficher tout de suite une erreur
 type ApiState = "checking" | "waking" | "ready" | "down";
+// Échanges renvoyés à l'API pour comprendre une question de suivi (« et en 2019 ? »)
+const HISTORY_TURNS = 3;
 const WAKE_RETRY_MS = 5000;
 const WAKE_TIMEOUT_MS = 120_000;
 const SLOW_START_MS = 2500;
@@ -21,6 +23,9 @@ export default function Home() {
   const [api, setApi] = useState<ApiState>("checking");
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState("");
+  // Échanges terminés de la conversation en cours, et question comprise par l'API
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [understood, setUnderstood] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [steps, setSteps] = useState<StepEvent[]>([]);
   const [answer, setAnswer] = useState<AnswerEvent | null>(null);
@@ -63,7 +68,11 @@ export default function Home() {
     if (q.length < 3 || status === "running" || api !== "ready") return;
     abort.current?.abort();
     abort.current = new AbortController();
+    const history = turns.slice(-HISTORY_TURNS);
+    let standalone: string | null = null;
+    let final: string | null = null;
     setAsked(q);
+    setUnderstood(null);
     setQuestion("");
     setSteps([]);
     setAnswer(null);
@@ -73,19 +82,39 @@ export default function Home() {
     try {
       await streamChat(
         q,
+        history,
         (event) => {
           if (event.type === "step") setSteps((s) => [...s, event]);
-          else if (event.type === "answer") setAnswer(event);
-          else setError((event as ErrorEvent).message);
+          else if (event.type === "rewrite") {
+            standalone = event.question;
+            setUnderstood(event.question);
+          } else if (event.type === "answer") {
+            final = event.abstained ? "(pas de réponse vérifiable)" : event.final_answer;
+            setAnswer(event);
+          } else setError((event as ErrorEvent).message);
         },
         abort.current.signal,
       );
+      // La question complète, plutôt que « et en 2019 ? », aide à comprendre la suivante
+      setTurns((t) => [...t, { question: standalone ?? q, answer: final }].slice(-6));
       setStatus("done");
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
       setError("Impossible de joindre l'API. Est-elle lancée ? (uv run poe api)");
       setStatus("error");
     }
+  }
+
+  function newConversation() {
+    abort.current?.abort();
+    setTurns([]);
+    setAsked("");
+    setUnderstood(null);
+    setSteps([]);
+    setAnswer(null);
+    setError(null);
+    setSelected(null);
+    setStatus("idle");
   }
 
   const running = status === "running";
@@ -128,7 +157,11 @@ export default function Home() {
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Pose une question sur les rapports annuels (en anglais), ex. What was 3M's capex in FY2018?"
+            placeholder={
+              turns.length
+                ? "Question de suivi, ex. And in 2019?"
+                : "Pose une question sur les rapports annuels (en anglais), ex. What was 3M's capex in FY2018?"
+            }
             className="flex-1 rounded-xl border border-line bg-panel px-4 py-3 text-sm outline-none focus:border-accent"
             disabled={running}
           />
@@ -146,10 +179,35 @@ export default function Home() {
           d&apos;informations personnelles.
         </p>
 
+        {turns.length > 0 && (
+          <div className="flex items-start justify-between gap-3">
+            {/* Échanges précédents de la conversation, en version courte */}
+            <ol className="min-w-0 flex-1 space-y-1 text-xs text-muted">
+              {turns.slice(0, running ? turns.length : -1).map((t, i) => (
+                <li key={i} className="truncate">
+                  <span className="text-ink">{t.question}</span> → {t.answer ?? "sans réponse"}
+                </li>
+              ))}
+            </ol>
+            <button
+              onClick={newConversation}
+              disabled={running}
+              className="shrink-0 rounded-md border border-line px-2 py-1 text-xs hover:border-accent disabled:opacity-50"
+            >
+              Nouvelle conversation
+            </button>
+          </div>
+        )}
+
         {asked && (
           <div className="rounded-xl bg-panel-2 px-4 py-3 text-sm">
             <span className="text-muted">Question · </span>
             {asked}
+            {understood && (
+              <p className="mt-1 text-xs text-muted">
+                J&apos;ai compris : <span className="text-ink">{understood}</span>
+              </p>
+            )}
           </div>
         )}
 
