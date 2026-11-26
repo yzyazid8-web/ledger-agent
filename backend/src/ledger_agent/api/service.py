@@ -6,7 +6,8 @@ from collections.abc import Iterator
 from contextlib import ExitStack
 from typing import Any, Protocol
 
-from ledger_agent.assembly import build_agent, build_retriever
+from ledger_agent.api.conversation import QuestionRewriter
+from ledger_agent.assembly import build_agent, build_llm, build_retriever
 from ledger_agent.config import Settings
 from ledger_agent.ingestion.universe import load_universe
 from ledger_agent.llm.types import LLMError, LLMQuotaError
@@ -17,7 +18,7 @@ from ledger_agent.observability import (
     question_scores,
 )
 from ledger_agent.pipeline import StreamingPipeline
-from ledger_agent.run_config import load_run_config
+from ledger_agent.run_config import LLMConfig, load_run_config
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,14 @@ class AgentService(Protocol):
 
     def companies(self) -> list[dict[str, str]]: ...
 
-    # `visitor` : adresse du visiteur, seulement pour une session anonyme dans le suivi
-    def stream(self, question: str, visitor: str | None = None) -> Iterator[dict[str, Any]]: ...
+    # `visitor` : adresse du visiteur, seulement pour une session anonyme dans le suivi ;
+    # `history` : derniers échanges de la conversation, pour comprendre une question de suivi
+    def stream(
+        self,
+        question: str,
+        visitor: str | None = None,
+        history: list[dict[str, Any]] | None = None,
+    ) -> Iterator[dict[str, Any]]: ...
 
     def close(self) -> None: ...
 
@@ -54,6 +61,24 @@ class LocalAgentService:
             self._config, settings, retriever, self._stack, tracer=tracer
         )
         self._metadata = {"config": self._config.name, "model": self._config.llm.model}
+        # Modèle léger, avec son propre quota : reformuler ne consomme pas celui de l'agent
+        rewrite_llm = (
+            build_llm(
+                LLMConfig(
+                    provider="groq",
+                    model=settings.api_rewrite_model,
+                    max_tokens=400,
+                    reasoning_effort="low",
+                    tokens_per_minute=8000,
+                ),
+                settings,
+                self._stack,
+                tracer,
+            )
+            if settings.api_rewrite_model
+            else None
+        )
+        self._rewriter = QuestionRewriter(rewrite_llm)
         # Qdrant en mode local et DuckDB ne supportent pas les accès concurrents :
         # les questions sont traitées une à une (suffisant pour une démonstration)
         self._lock = threading.Lock()
@@ -69,13 +94,24 @@ class LocalAgentService:
     def companies(self) -> list[dict[str, str]]:
         return [{"ticker": c.ticker, "name": c.name} for c in load_universe()]
 
-    def stream(self, question: str, visitor: str | None = None) -> Iterator[dict[str, Any]]:
+    def stream(
+        self,
+        question: str,
+        visitor: str | None = None,
+        history: list[dict[str, Any]] | None = None,
+    ) -> Iterator[dict[str, Any]]:
         with (
             self._lock,
             self._tracer.question(question, anonymous_session(visitor), self._metadata) as trace,
         ):
             events: list[dict[str, Any]] = []
-            for event in self._events(question, trace.callbacks):
+            # Question de suivi : l'agent reçoit une question autonome, affichée à l'utilisateur
+            standalone = self._rewriter.rewrite(question, history)
+            if standalone != question:
+                event = {"type": "rewrite", "question": standalone}
+                events.append(event)
+                yield event
+            for event in self._events(standalone, trace.callbacks):
                 events.append(event)
                 yield event
             # Bilan de la question pour le suivi : réponse ou erreur, et quelques notes

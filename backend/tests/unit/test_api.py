@@ -25,6 +25,7 @@ class FakeService:
         self.events = events
         self.closed = False
         self.questions: list[str] = []
+        self.histories: list[list[dict[str, Any]]] = []
 
     @property
     def ready(self) -> bool:
@@ -37,8 +38,14 @@ class FakeService:
     def companies(self) -> list[dict[str, str]]:
         return [{"ticker": "MMM", "name": "3M"}]
 
-    def stream(self, question: str, visitor: str | None = None) -> Iterator[dict[str, Any]]:
+    def stream(
+        self,
+        question: str,
+        visitor: str | None = None,
+        history: list[dict[str, Any]] | None = None,
+    ) -> Iterator[dict[str, Any]]:
         self.questions.append(question)
+        self.histories.append(history or [])
         yield from self.events
 
     def close(self) -> None:
@@ -168,3 +175,21 @@ def test_a_spoofed_forwarded_header_does_not_bypass_the_limit() -> None:
         ]
 
     assert statuses == [200, 200, 429]
+
+
+def test_the_conversation_history_reaches_the_service() -> None:
+    client, service = client_for([ANSWER])
+    history = [{"question": "What was 3M's capex in FY2018?", "answer": "$1,577 million"}]
+    with client:
+        client.post("/chat", json={"question": "And in 2019?", "history": history})
+
+    assert service.histories[-1] == history
+
+
+def test_a_too_long_history_is_refused() -> None:
+    client, _ = client_for([ANSWER])
+    turns = [{"question": "q", "answer": "a"}] * 7
+    with client:
+        response = client.post("/chat", json={"question": "And in 2019?", "history": turns})
+
+    assert response.status_code == 422

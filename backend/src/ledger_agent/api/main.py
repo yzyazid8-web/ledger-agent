@@ -32,6 +32,10 @@ def sse(event: dict[str, Any]) -> str:
     return f"event: {event.get('type', 'message')}\ndata: {payload}\n\n"
 
 
+def _history(body: ChatRequest) -> list[dict[str, Any]]:
+    return [turn.model_dump() for turn in body.history]
+
+
 def create_app(service_factory: ServiceFactory | None = None) -> FastAPI:
     settings = get_settings()
     factory = service_factory or (lambda: LocalAgentService(settings))
@@ -89,7 +93,9 @@ def create_app(service_factory: ServiceFactory | None = None) -> FastAPI:
         """Diffuse les étapes de l'agent au fil de l'eau, puis la réponse finale (SSE)."""
         events: Iterator[dict[str, Any]]
         if limiter.allow(visitor_key(request)):
-            events = service(request).stream(body.question, visitor=visitor_key(request))
+            events = service(request).stream(
+                body.question, visitor=visitor_key(request), history=_history(body)
+            )
         else:
             # Événement d'erreur plutôt qu'un code HTTP : l'interface affiche le message tel quel
             events = iter([{"type": "error", "code": "limit", "message": limit_message}])
@@ -106,7 +112,10 @@ def create_app(service_factory: ServiceFactory | None = None) -> FastAPI:
         if not limiter.allow(visitor_key(request)):
             raise HTTPException(status_code=429, detail=limit_message)
         steps: list[dict[str, Any]] = []
-        for event in service(request).stream(body.question, visitor=visitor_key(request)):
+        events = service(request).stream(
+            body.question, visitor=visitor_key(request), history=_history(body)
+        )
+        for event in events:
             if event["type"] == "error":
                 status = 429 if event.get("code") == "quota" else 502
                 raise HTTPException(status_code=status, detail=event["message"])

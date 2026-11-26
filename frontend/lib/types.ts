@@ -49,7 +49,19 @@ export interface ErrorEvent {
   retry_after_s?: number;
 }
 
-export type AgentEvent = StepEvent | AnswerEvent | ErrorEvent;
+// Question de suivi reformulée par l'API avant d'atteindre l'agent (« et en 2019 ? » → question complète)
+export interface RewriteEvent {
+  type: "rewrite";
+  question: string;
+}
+
+export type AgentEvent = StepEvent | AnswerEvent | ErrorEvent | RewriteEvent;
+
+// Échange terminé d'une conversation, renvoyé à l'API avec la question suivante
+export interface Turn {
+  question: string;
+  answer: string | null;
+}
 
 export interface Company {
   ticker: string;
